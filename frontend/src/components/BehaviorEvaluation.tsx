@@ -15,20 +15,21 @@ dayjs.extend(localeData);
 
 const { Title, Text } = Typography;
 const { Option } = Select;
-const BASE = "http://localhost:8088/api"; // ✅ เหมือน StaffManagement
+const BASE = "http://localhost:8088/api";
 
 // ---------- Types ----------
 export interface Prisoner {
-  prisonerId: number;        // Prisoner_ID
+  prisonerId: number;    // Prisoner_ID
+  inmateId: string;      // ✅ FIX: เพิ่ม Inmate_ID เข้ามา
   firstName: string;
   lastName: string;
 }
 
 export interface BehaviorEvaluationRecord {
   id?: number;
-  sId: number;               // SID
-  mId: number;               // MID
-  bId: number;               // BID
+  sId: number;
+  mId: number;
+  bId: number;
   evaluationDate: string | Dayjs;
   notes: string;
   scoreBehavior?: { sId: number; prisonerId: number; score: number; prisoner?: Prisoner };
@@ -36,6 +37,7 @@ export interface BehaviorEvaluationRecord {
   behaviorCriterion?: { bId: number; criterion: string };
   key?: string;
   prisonerId?: string;
+  inmateId?: string;      // ✅ FIX: เพิ่ม Inmate_ID เข้ามา
   prisonerName?: string;
   recordedBy?: string;
   behaviorScore?: number;
@@ -45,6 +47,7 @@ export interface BehaviorEvaluationRecord {
 // ---------- Mappers ----------
 const mapPrisoner = (p: any): Prisoner => ({
   prisonerId: p.Prisoner_ID ?? p.prisonerId ?? p.id,
+  inmateId: p.Inmate_ID ?? p.inmateId ?? "", // ✅ FIX: Map ข้อมูล Inmate_ID
   firstName: p.FirstName ?? p.firstName ?? "",
   lastName: p.LastName ?? p.lastName ?? "",
 });
@@ -56,6 +59,7 @@ const mapEvaluation = (d: any): BehaviorEvaluationRecord => {
   const prisoner = sb.prisoner ?? sb.Prisoner ?? null;
 
   const prisonerIdRaw = sb.prisonerId ?? sb.Prisoner_ID ?? prisoner?.Prisoner_ID;
+  const inmateIdRaw = prisoner?.Inmate_ID ?? ""; // ✅ FIX: ดึง Inmate_ID จากข้อมูล prisoner ที่ซ้อนอยู่
   const prisonerFullName = prisoner
     ? `${prisoner.FirstName ?? prisoner.firstName ?? ""} ${prisoner.LastName ?? prisoner.lastName ?? ""}`.trim()
     : "ไม่พบข้อมูล";
@@ -72,6 +76,7 @@ const mapEvaluation = (d: any): BehaviorEvaluationRecord => {
     key: (d.id ?? d.ID ?? "").toString(),
     evaluationDate: evalDate ? dayjs(evalDate) : null,
     prisonerId: prisonerIdRaw ? String(prisonerIdRaw) : "",
+    inmateId: inmateIdRaw, // ✅ FIX: กำหนดค่า inmateId
     prisonerName: prisonerFullName,
     recordedBy,
     behaviorScore: sb.score ?? sb.Score ?? 0,
@@ -96,7 +101,7 @@ export default function BehaviorEvaluation() {
   const [loading, setLoading] = useState(true);
   const [currentPrisonerScore, setCurrentPrisonerScore] = useState<number | null>(null);
 
-  // ---------- API calls (axios แบบ StaffManagement) ----------
+  // ---------- API calls ----------
   const fetchEvaluations = async () => {
     try {
       const res = await axios.get(`${BASE}/evaluations`);
@@ -149,7 +154,8 @@ export default function BehaviorEvaluation() {
     setFiltered(
       data.filter(
         (r) =>
-          (r.prisonerId ?? "").toLowerCase().includes(lower) ||
+          // ✅ FIX: ค้นหาจาก inmateId แทน prisonerId
+          (r.inmateId ?? "").toLowerCase().includes(lower) ||
           (r.prisonerName ?? "").toLowerCase().includes(lower) ||
           (r.recordedBy ?? "").toLowerCase().includes(lower)
       )
@@ -184,7 +190,6 @@ export default function BehaviorEvaluation() {
       prisonerId: Number(values.prisonerId),
       bId: values.bId,
       mId: values.mId,
-      // controller ใช้ time.Time: ส่ง ISO ไปได้
       evaluationDate: values.evaluationDate ? dayjs(values.evaluationDate).toISOString() : null,
       notes: values.notes ?? "",
     };
@@ -222,19 +227,12 @@ export default function BehaviorEvaluation() {
     }
   };
 
-  // รองรับทั้ง /scores/:id และ /scorebehavior/prisoner/:id
   const fetchPrisonerScore = async (pid: string | number) => {
     try {
-      const r1 = await axios.get(`${BASE}/scores/${pid}`);
-      if (r1?.data && typeof (r1.data.Score ?? r1.data.score) === "number") {
-        return r1.data.Score ?? r1.data.score;
-      }
-    } catch {}
-    try {
-      const r2 = await axios.get(`${BASE}/scorebehavior/prisoner/${pid}`);
-      return r2?.data?.score ?? r2?.data?.Score ?? null;
+        const res = await axios.get(`${BASE}/scorebehavior/prisoner/${pid}`);
+        return res?.data?.score ?? res?.data?.Score ?? null;
     } catch {
-      return null;
+        return null;
     }
   };
 
@@ -253,7 +251,8 @@ export default function BehaviorEvaluation() {
   // ---------- Columns ----------
   const columns = [
     { title: "ลำดับ", key: "index", render: (_: any, __: any, index: number) => index + 1, width: 80 },
-    { title: "รหัสผู้ต้องขัง", dataIndex: "prisonerId", width: 120 },
+    // ✅ FIX: เปลี่ยน DataIndex เป็น inmateId
+    { title: "รหัสผู้ต้องขัง", dataIndex: "inmateId", width: 120 },
     { title: "ชื่อ-นามสกุล", dataIndex: "prisonerName", width: 180, render: (text: string) => <Text strong>{text}</Text> },
     {
       title: "วันที่ประเมิน",
@@ -362,8 +361,10 @@ export default function BehaviorEvaluation() {
                   disabled={!!editing}
                 >
                   {prisoners.map((p) => (
+                    // ✅ FIX: เปลี่ยนการแสดงผลเป็น inmateId
+                    // แต่ยังคงส่ง value เป็น prisonerId (PK) กลับไป
                     <Option key={p.prisonerId} value={p.prisonerId.toString()}>
-                      {p.prisonerId} - {p.firstName} {p.lastName}
+                      {p.inmateId} - {p.firstName} {p.lastName}
                     </Option>
                   ))}
                 </Select>

@@ -20,12 +20,12 @@ const { RangePicker } = DatePicker;
 const { Option } = Select;
 const { TextArea } = Input;
 
-// ✅ ใช้รูปแบบเดียวกับ BehaviorEvaluation.tsx
 const BASE = "http://localhost:8088/api";
 
 // ---------- Types ----------
 interface PrisonerRecord {
   Prisoner_ID: number;
+  Inmate_ID: string; // ✅ FIX: เพิ่ม Inmate_ID
   FirstName: string;
   LastName: string;
 }
@@ -73,6 +73,7 @@ interface ActivityFormValues {
 // ---------- Mappers ----------
 const mapPrisoner = (p: any): PrisonerRecord => ({
   Prisoner_ID: p.Prisoner_ID ?? p.prisonerId ?? p.id,
+  Inmate_ID: p.Inmate_ID ?? p.inmateId ?? "", // ✅ FIX: Map ข้อมูล Inmate_ID
   FirstName: p.FirstName ?? p.firstName ?? "",
   LastName: p.LastName ?? p.lastName ?? "",
 });
@@ -135,7 +136,7 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
   const [withdrawalModalOpen, setWithdrawalModalOpen] = useState(false);
   const [currentEnrollment, setCurrentEnrollment] = useState<EnrollmentRecord | null>(null);
 
-  // ---------- API (axios แบบเดียวกับ BehaviorEvaluation) ----------
+  // ---------- API ----------
   const fetchSchedules = async () => {
     try {
       const res = await axios.get(`${BASE}/schedules`);
@@ -207,7 +208,7 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
     form.setFieldsValue({
       activityName: record.activity.activityName,
       description: record.activity.description,
-      instructorId: record.member.MID, // ✅ MID
+      instructorId: record.member.MID,
       room: record.activity.location,
       maxParticipants: record.max,
       dateRange: [
@@ -443,7 +444,8 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
 
   const participantColumns = [
     { title: "ลำดับ", render: (_: any, __: any, idx: number) => idx + 1, width: 70 },
-    { title: "รหัสผู้ต้องขัง", dataIndex: ["prisoner", "Prisoner_ID"] },
+    // ✅ FIX: เปลี่ยน DataIndex เป็น Inmate_ID
+    { title: "รหัสผู้ต้องขัง", dataIndex: ["prisoner", "Inmate_ID"] },
     {
       title: "ชื่อ-นามสกุล",
       render: (_: any, r: EnrollmentRecord) =>
@@ -601,8 +603,9 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
               optionFilterProp="children"
             >
               {prisoners.map((p) => (
+                // ✅ FIX: เปลี่ยนการแสดงผลเป็น Inmate_ID แต่ยังส่ง Prisoner_ID เป็น value
                 <Option key={p.Prisoner_ID} value={p.Prisoner_ID}>
-                  {p.Prisoner_ID} - {p.FirstName} {p.LastName}
+                  {p.Inmate_ID} - {p.FirstName} {p.LastName}
                 </Option>
               ))}
             </Select>
