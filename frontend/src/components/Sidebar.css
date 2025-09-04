@@ -1,0 +1,54 @@
+.sidebar {
+  width: 220px;
+  height: 100vh;
+  background-color: #011627;
+  color: white;
+  display: flex;
+  flex-direction: column;
+  padding: 20px 10px;
+}
+
+/* ขยับ header ให้อยู่บนสุด */
+.sidebar-header {
+  font-size: 20px;
+  font-weight: bold;
+  margin-bottom: 30px;
+  text-align: center;
+}
+
+/* เมนูชิดบน */
+.menu {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* ปุ่มเมนู */
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: white;
+  text-decoration: none;
+  padding: 10px;
+  border-radius: 8px;
+  transition: background 0.2s;
+}
+
+.menu-item:hover {
+  background-color: #1e3a8a;
+}
+
+.menu-item.active {
+  background-color: #2563eb;
+  color: white;
+}
+
+/* ปุ่ม collapse อยู่ล่างสุด */
+.collapse-button {
+  margin-top: auto; /* <-- ให้มันดันไปล่าง */
+  text-align: center;
+  cursor: pointer;
+  padding: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
