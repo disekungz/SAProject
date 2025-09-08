@@ -122,7 +122,7 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
   const [form] = Form.useForm<ActivityFormValues>();
   const [participantForm] = Form.useForm();
   const [withdrawalForm] = Form.useForm();
-
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
   const [data, setData] = useState<ActivityRecord[]>([]);
   const [filtered, setFiltered] = useState<ActivityRecord[]>([]);
   const [prisoners, setPrisoners] = useState<PrisonerRecord[]>([]);
@@ -359,7 +359,9 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
     }
   };
 
-  const actionMenuItems = (record: ActivityRecord): MenuProps["items"] => [
+  // src/ActivityAndVocationalTrainingSchedule.tsx
+
+const actionMenuItems = (record: ActivityRecord): MenuProps["items"] => [
     {
       key: "edit",
       icon: <EditOutlined />,
@@ -370,16 +372,9 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
       key: "delete",
       icon: <DeleteOutlined />,
       danger: true,
-      label: (
-        <Popconfirm
-          title="แน่ใจหรือไม่ว่าจะลบ?"
-          onConfirm={() => handleDelete(record.schedule_ID)}
-          okText="ลบ"
-          cancelText="ยกเลิก"
-        >
-          ลบ
-        </Popconfirm>
-      ),
+      label: "ลบ",
+      // เมื่อคลิก "ลบ" ให้ตั้งค่า ID ที่ต้องการยืนยันการลบ
+      onClick: () => setConfirmDeleteId(record.schedule_ID),
     },
   ];
 
@@ -429,14 +424,32 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
       key: "actions",
       fixed: "right" as const,
       width: 150,
+      // ✅ STEP 2.2: แก้ไข render function ทั้งหมด
       render: (_: any, record: ActivityRecord) => (
         <Space>
           <Button icon={<EyeOutlined />} onClick={() => openParticipantModal(record)}>
             ดูรายชื่อ
           </Button>
-          <Dropdown menu={{ items: actionMenuItems(record) }} trigger={["click"]}>
-            <Button icon={<MoreOutlined />} />
-          </Dropdown>
+          
+          {/* Popconfirm จะมาครอบ Dropdown ที่นี่ */}
+          <Popconfirm
+            title="แน่ใจหรือไม่ว่าจะลบ?"
+            // แสดง Popconfirm นี้เมื่อ confirmDeleteId ตรงกับ ID ของแถวนี้
+            open={confirmDeleteId === record.schedule_ID} 
+            onConfirm={() => {
+              handleDelete(record.schedule_ID);
+              setConfirmDeleteId(null); // ซ่อน Popconfirm หลังกดยืนยัน
+            }}
+            onCancel={() => setConfirmDeleteId(null)} // ซ่อน Popconfirm หลังกดยกเลิก
+            okText="ลบ"
+            cancelText="ยกเลิก"
+            okButtonProps={{ loading: loading }}
+          >
+            {/* Dropdown อยู่ข้างใน Popconfirm */}
+            <Dropdown menu={{ items: actionMenuItems(record) }} trigger={["click"]}>
+              <Button icon={<MoreOutlined />} />
+            </Dropdown>
+          </Popconfirm>
         </Space>
       ),
     },
