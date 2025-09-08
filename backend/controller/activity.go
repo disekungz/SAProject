@@ -174,22 +174,45 @@ func DeleteActivitySchedule(c *gin.Context) {
 	id := c.Param("id")
 
 	err := db.Transaction(func(tx *gorm.DB) error {
-		// ลบ Enrollment ของ schedule ก่อน
-		if err := tx.Where("schedule_id = ?", id).
-			Delete(&entity.Enrollment{}).Error; err != nil {
+		// 1. ค้นหา Schedule ที่จะลบเพื่อเอา Activity_ID มาใช้ทีหลัง
+		var scheduleToDelete entity.ActivitySchedule
+		if err := tx.First(&scheduleToDelete, id).Error; err != nil {
+			// ถ้าไม่เจอ schedule ก็จบการทำงาน
 			return err
 		}
-		// ลบ Schedule
+		activityID := scheduleToDelete.Activity_ID
+
+		// 2. ลบ Enrollment ทั้งหมดที่เกี่ยวข้องกับ Schedule นี้ก่อน (ถูกต้องแล้ว)
+		if err := tx.Where("schedule_id = ?", id).Delete(&entity.Enrollment{}).Error; err != nil {
+			return err
+		}
+
+		// 3. ลบ Schedule เอง (ถูกต้องแล้ว)
 		if err := tx.Delete(&entity.ActivitySchedule{}, id).Error; err != nil {
 			return err
 		}
+
+		// 4. (ส่วนที่เพิ่มเข้ามา) ตรวจสอบว่ามี Schedule อื่นยังใช้ Activity นี้อยู่หรือไม่
+		var remainingSchedules int64
+		if err := tx.Model(&entity.ActivitySchedule{}).Where("activity_id = ?", activityID).Count(&remainingSchedules).Error; err != nil {
+			return err
+		}
+
+		// 5. (ส่วนที่เพิ่มเข้ามา) ถ้าไม่มี Schedule ไหนใช้ Activity นี้แล้ว ก็ลบ Activity ทิ้ง
+		if remainingSchedules == 0 {
+			if err := tx.Delete(&entity.Activity{}, activityID).Error; err != nil {
+				return err
+			}
+		}
+
 		return nil
 	})
+
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "Schedule deleted"})
+	c.JSON(http.StatusOK, gin.H{"message": "Schedule and related data deleted successfully"})
 }
 
 type enrollmentInput struct {
