@@ -1,3 +1,4 @@
+// src/components/Petition.tsx
 import { useEffect, useMemo, useState } from "react";
 import {
   Input,
@@ -16,45 +17,44 @@ import {
   Col,
   AutoComplete,
   Tag,
-  Layout,
-  theme,
+  Avatar,
 } from "antd";
 import {
   SearchOutlined,
   EditOutlined,
   DeleteOutlined,
   PlusOutlined,
+  UserOutlined,
+  FileTextOutlined,
+  ClockCircleOutlined,
+  CheckCircleOutlined,
+  CloseCircleOutlined,
+  ExclamationCircleOutlined,
 } from "@ant-design/icons";
-import axios from "axios";
 import dayjs, { Dayjs } from "dayjs";
+import { getUser } from "../lib/auth";
+import { api } from "../lib/axios";
 
 const { Title } = Typography;
 const { Option } = Select;
-const { Header, Content } = Layout;
-
-const api = axios.create({
-  baseURL: "http://localhost:8088",
-});
-
-type ID = number;
 
 // --- Interfaces ---
+type ID = number;
+
 interface Inmate {
   Prisoner_ID: ID;
   FirstName: string;
   LastName: string;
-  Citizen_ID: string;
 }
 
 interface Staff {
   StaffID: ID;
-  FirstName: string;
+  FirstName:string;
   LastName: string;
 }
 
-// --- 1. แก้ไข Interface Status ---
 interface Status {
-  Status_ID: ID; // เปลี่ยนจาก ID
+  Status_ID: ID;
   Status: string;
 }
 
@@ -68,22 +68,30 @@ interface Petition {
   Detail: string;
   Date_created: string;
   Inmate_ID: number;
-  Inmate?: Inmate;
   Staff_ID: number;
-  Staff?: Staff;
   Status_ID: number;
-  Status?: Status;
   Type_cum_ID: number;
+  Inmate?: Inmate;
+  Staff?: Staff;
+  Status?: Status;
   Type?: PetitionTypeCum;
 }
 
-interface PetitionForm extends Omit<Petition, "Date_created"> {
+interface PetitionForm {
+  ID?: number;
+  Detail: string;
   Date_created: Dayjs | null;
+  Inmate_ID: number | undefined;
   Inmate_Input?: string;
+  Staff_ID: number | undefined;
+  Status_ID: number | undefined;
+  Type_cum_ID: number | undefined;
 }
 
 export default function Petition() {
-  const { token: { colorBgContainer, borderRadiusLG } } = theme.useToken();
+  const user = getUser();
+  const isAdmin = user?.rankId === 1;
+
   const [petitions, setPetitions] = useState<Petition[]>([]);
   const [inmates, setInmates] = useState<Inmate[]>([]);
   const [staffs, setStaffs] = useState<Staff[]>([]);
@@ -92,67 +100,74 @@ export default function Petition() {
   const [form] = Form.useForm<PetitionForm>();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [editing, setEditing] = useState(false);
+  const [editingPetition, setEditingPetition] = useState<Petition | null>(null);
   const [searchValue, setSearchValue] = useState("");
   const [filteredPetitions, setFilteredPetitions] = useState<Petition[]>([]);
   const [inmateOptions, setInmateOptions] = useState<{ value: string; label: string; key: number }[]>([]);
 
   const fetchData = async () => {
-    setLoading(true);
     try {
+      // vvv --- แก้ไขโดยการลบ /api/ ออก --- vvv
       const [inmateRes, staffRes, statusRes, typesRes, petitionRes] = await Promise.all([
-        api.get("/api/prisoners"),
-        api.get("/api/staffs"),
-        api.get("/api/statuses"),
-        api.get("/api/typesc"),
-        api.get("/api/petitions"),
+        api.get("/prisoners"),
+        api.get("/staffs"),
+        api.get("/statuses"),
+        api.get("/typesc"),
+        api.get("/petitions"),
       ]);
+      // ^^^ --------------------------------- ^^^
 
       const inmateData: Inmate[] = inmateRes.data || [];
       const staffData: Staff[] = staffRes.data || [];
       const statusData: Status[] = statusRes.data || [];
       const typesData: PetitionTypeCum[] = typesRes.data || [];
       const petitionData: Petition[] = petitionRes.data || [];
+      
+      const merged = petitionData.map((p) => ({
+        ...p,
+        Inmate: inmateData.find(i => i.Prisoner_ID === p.Inmate_ID),
+        Staff: staffData.find(s => s.StaffID === p.Staff_ID),
+        Status: statusData.find(st => st.Status_ID === p.Status_ID),
+        Type: typesData.find(t => t.ID === p.Type_cum_ID),
+      }));
 
       setInmates(inmateData);
       setStaffs(staffData);
       setStatuses(statusData);
       setTypes(typesData);
-      
-      const merged = petitionData.map((p: Petition) => ({
-        ...p,
-        Inmate: inmateData.find(i => i.Prisoner_ID === p.Inmate_ID),
-        Staff: staffData.find(s => s.StaffID === p.Staff_ID),
-        Status: statusData.find(st => st.Status_ID === p.Status_ID), // 2. แก้ไขการ find
-        Type: typesData.find(t => t.ID === p.Type_cum_ID),
-      }));
-
       setPetitions(merged);
       setFilteredPetitions(merged);
     } catch (error) {
-      message.error("ไม่สามารถดึงข้อมูลได้");
-    } finally {
-        setLoading(false);
+      console.error("Fetch data error:", error);
+      message.error("ไม่สามารถดึงข้อมูลได้ (อาจเป็นปัญหาการยืนยันตัวตน)");
     }
   };
 
   useEffect(() => {
     fetchData();
+    const intervalId = setInterval(() => fetchData(), 15000);
+    return () => clearInterval(intervalId);
   }, []);
 
   useEffect(() => {
-    const lowercasedValue = searchValue.toLowerCase().trim();
-    if (lowercasedValue === "") {
+    if (open && !editingPetition && statuses.length > 0) {
+      const waitingStatus = statuses.find(st => st.Status === "รอ...");
+      if (waitingStatus) {
+        form.setFieldsValue({ Status_ID: waitingStatus.Status_ID });
+      }
+    }
+  }, [open, editingPetition, statuses, form]);
+
+  useEffect(() => {
+    if (!searchValue) {
       setFilteredPetitions(petitions);
     } else {
+      const lowercasedValue = searchValue.toLowerCase().trim();
       const filteredData = petitions.filter(item => {
         const inmateName = `${item.Inmate?.FirstName} ${item.Inmate?.LastName}`.toLowerCase();
         const staffName = `${item.Staff?.FirstName} ${item.Staff?.LastName}`.toLowerCase();
         const detail = item.Detail?.toLowerCase() || '';
-        
-        return inmateName.includes(lowercasedValue) || 
-               staffName.includes(lowercasedValue) ||
-               detail.includes(lowercasedValue);
+        return inmateName.includes(lowercasedValue) || staffName.includes(lowercasedValue) || detail.includes(lowercasedValue);
       });
       setFilteredPetitions(filteredData);
     }
@@ -160,174 +175,60 @@ export default function Petition() {
   
   const getStatusTag = (statusName?: string) => {
     switch (statusName) {
-        case 'อนุมัติ':
-            return <Tag color="green">อนุมัติ</Tag>;
-        case 'ปฏิเสธ':
-        case 'ไม่อนุมัติ':
-            return <Tag color="red">ปฏิเสธ</Tag>;
-        case 'รอดำเนินการ':
-        case 'รอ...':
-            return <Tag color="blue">รอดำเนินการ</Tag>;
-        case 'สำเร็จ':
-            return <Tag color="purple">สำเร็จ</Tag>
-        default:
-            return <Tag>{statusName || 'ไม่ระบุ'}</Tag>;
+      case 'อนุมัติ': return <Tag color="success" icon={<CheckCircleOutlined />}>อนุมัติ</Tag>;
+      case 'ปฏิเสธ': case 'ไม่อนุมัติ': return <Tag color="error" icon={<CloseCircleOutlined />}>ปฏิเสธ</Tag>;
+      case 'รอดำเนินการ': case 'รอ...': return <Tag color="processing" icon={<ClockCircleOutlined />}>รอดำเนินการ</Tag>;
+      case 'สำเร็จ': return <Tag color="purple" icon={<CheckCircleOutlined />}>สำเร็จ</Tag>;
+      default: return <Tag icon={<ExclamationCircleOutlined />}>{statusName || 'ไม่ระบุ'}</Tag>;
     }
   };
 
   const getTypeTag = (typeName?: string) => {
     switch (typeName) {
-        case 'สุขภาพ':
-            return <Tag color="cyan">สุขภาพ</Tag>;
-        case 'โอนย้าย':
-            return <Tag color="purple">โอนย้าย</Tag>;
-        case 'ทั่วไป':
-            return <Tag color="gold">ทั่วไป</Tag>;
-        default:
-            return <Tag>ไม่ระบุ</Tag>;
+      case 'สุขภาพ': return <Tag color="cyan">{typeName}</Tag>;
+      case 'โอนย้าย': return <Tag color="purple">{typeName}</Tag>;
+      case 'ทั่วไป': return <Tag color="gold">{typeName}</Tag>;
+      default: return <Tag>{typeName || 'ไม่ระบุ'}</Tag>;
     }
   };
 
-
- const columns = useMemo(
-  () => [
-    {
-      title: "ลำดับ",
-      key: "index",
-      render: (_: any, __: any, index: number) => index + 1,
-      width: 70
-    },
-    {
-      title: "ผู้ยื่นคำร้อง",
-      render: (record: Petition) => `${record.Inmate?.FirstName} ${record.Inmate?.LastName}`,
-    },
-    {
-      title: "ประเภท",
-      dataIndex: ['Type', 'Type_cum_name'],
-      render: (typeName: string) => getTypeTag(typeName),
-    },
-    {
-      title: "สถานะ",
-      dataIndex: ['Status', 'Status'],
-      render: (status: string) => getStatusTag(status),
-    },
-    {
-      title: "รายละเอียด",   // 👈 เพิ่มตรงนี้
-      dataIndex: "Detail",
-      render: (text: string) => text || "-",
-      ellipsis: true, // ถ้าเนื้อหายาวจะย่อและมี tooltip
-    },
-    {
-      title: "วันที่ยื่น",
-      dataIndex: "Date_created",
-      render: (date: string) => date ? dayjs(date).format("DD/MM/YYYY") : '-',
-    },
-    {
-      title: "เจ้าหน้าที่ผู้รับเรื่อง",
-      render: (record: Petition) => `${record.Staff?.FirstName} ${record.Staff?.LastName}`,
-    },
-    {
-      title: "การจัดการ",
-      key: "action",
-      render: (record: Petition) => (
-        <Space>
-          <Button
-            type="primary"
-            ghost
-            icon={<EditOutlined />}
-            size="small"
-            onClick={() => {
-              setEditing(true);
-              setOpen(true);
-              const inmateText = record.Inmate ? `${record.Inmate.FirstName} ${record.Inmate.LastName}` : '';
-              form.setFieldsValue({
-                ...record,
-                Date_created: record.Date_created ? dayjs(record.Date_created) : null,
-                Inmate_Input: inmateText,
-              });
-            }}
-          >
-            แก้ไข
-          </Button>
-          <Popconfirm
-            title="ยืนยันการลบ?"
-            onConfirm={() => handleDelete(record.ID)}
-            okText="ยืนยัน"
-            cancelText="ยกเลิก"
-          >
-            <Button icon={<DeleteOutlined />} size="small" danger>
-              ลบ
-            </Button>
-          </Popconfirm>
-        </Space>
-      ),
-    },
-  ],
-  [petitions],
-);
-
-
-  const handleInmateSearch = (searchText: string) => {
-    if (!searchText) {
-      setInmateOptions([]);
-    } else {
-      const filtered = inmates.filter(p =>
-        `${p.FirstName} ${p.LastName}`.toLowerCase().includes(searchText.toLowerCase())
-      );
-      setInmateOptions(
-        filtered.map(p => ({
-          value: `${p.FirstName} ${p.LastName}`,
-          label: `${p.FirstName} ${p.LastName}`,
-          key: p.Prisoner_ID,
-        }))
-      );
-    }
+  const openAdd = () => {
+    setEditingPetition(null);
+    form.resetFields();
+    setOpen(true);
   };
-  
-  const onInmateSelect = (value: string, option: { key: number }) => {
-     form.setFieldsValue({ Inmate_ID: option.key });
-  };
-  
-  const onInmateChange = (data: string) => {
-      if(!data){
-          form.setFieldsValue({ Inmate_ID: undefined });
-      }
-  }
 
-  const handleDelete = async (id: number) => {
-    try {
-        await api.delete(`/api/petitions/${id}`);
-        message.success("ลบคำร้องสำเร็จ");
-        fetchData();
-    } catch (error) {
-        message.error("เกิดข้อผิดพลาดในการลบคำร้อง");
-    }
+  const openEdit = (record: Petition) => {
+    setEditingPetition(record);
+    const inmateText = record.Inmate ? `${record.Inmate.FirstName} ${record.Inmate.LastName}` : '';
+    form.setFieldsValue({
+      ...record,
+      Date_created: record.Date_created ? dayjs(record.Date_created) : null,
+      Inmate_Input: inmateText,
+      Status_ID: record.Status_ID,
+    });
+    setOpen(true);
   };
 
   const onFinish = async (values: PetitionForm) => {
     setLoading(true);
     try {
-      const { Inmate_Input, ...rest } = values;
       const payload = {
-        ...rest,
-        Detail: values.Detail,
-        Inmate_ID: values.Inmate_ID,
-        Staff_ID: values.Staff_ID,
-        Status_ID: values.Status_ID,
-        Type_ID: values.Type_cum_ID,
+        ...values,
         Date_created: values.Date_created?.toISOString(),
       };
-
-      if (editing) {
-        await api.put(`/api/petitions/${form.getFieldValue("ID")}`, payload);
-        message.success("แก้ไขสำเร็จ");
+      delete (payload as any).Inmate_Input;
+      if (editingPetition) {
+        // vvv --- แก้ไขโดยการลบ /api/ ออก --- vvv
+        await api.put(`/petitions/${editingPetition.ID}`, payload);
+        message.success("แก้ไขคำร้องสำเร็จ");
       } else {
-        await api.post("/api/petitions", payload);
+        // vvv --- แก้ไขโดยการลบ /api/ ออก --- vvv
+        await api.post("/petitions", payload);
         message.success("เพิ่มคำร้องสำเร็จ");
       }
       setOpen(false);
-      form.resetFields();
-      fetchData();
+      await fetchData();
     } catch (error) {
       message.error("เกิดข้อผิดพลาดในการบันทึกข้อมูล");
     } finally {
@@ -335,121 +236,137 @@ export default function Petition() {
     }
   };
 
+  const onFinishFailed = (errorInfo: any) => {
+    console.log('Validation Failed:', errorInfo);
+    message.error('กรุณากรอกข้อมูลให้ครบทุกช่องที่มีเครื่องหมาย *');
+  };
+
+  const handleDelete = async (id: number) => {
+    try {
+      setLoading(true);
+      // vvv --- แก้ไขโดยการลบ /api/ ออก --- vvv
+      await api.delete(`/petitions/${id}`);
+      message.success("ลบคำร้องสำเร็จ");
+      await fetchData();
+    } catch (error) {
+      message.error("เกิดข้อผิดพลาดในการลบคำร้อง");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleInmateSearch = (searchText: string) => {
+    if (!searchText) setInmateOptions([]);
+    else {
+      const filtered = inmates.filter(p => `${p.FirstName} ${p.LastName}`.toLowerCase().includes(searchText.toLowerCase()));
+      setInmateOptions(filtered.map(p => ({ value: `${p.FirstName} ${p.LastName}`, label: `${p.FirstName} ${p.LastName}`, key: p.Prisoner_ID })));
+    }
+  };
+  
+  const onInmateSelect = (_: string, option: { key: number }) => form.setFieldsValue({ Inmate_ID: option.key });
+  const onInmateChange = (data: string) => { if(!data) form.setFieldsValue({ Inmate_ID: undefined }); };
+
+  const columns = useMemo(
+    () => [
+      { title: "ลำดับ", key: "index", render: (_: any, __: any, index: number) => index + 1, width: 70, align: 'center' as const },
+      { title: "ผู้ยื่นคำร้อง", render: (record: Petition) => <Space><Avatar icon={<UserOutlined />} /><span>{`${record.Inmate?.FirstName} ${record.Inmate?.LastName}`}</span></Space> },
+      { title: "ประเภท", dataIndex: ['Type', 'Type_cum_name'], render: (typeName: string) => getTypeTag(typeName) },
+      { title: "สถานะ", dataIndex: ['Status', 'Status'], render: (status: string) => getStatusTag(status) },
+      { title: "รายละเอียด", dataIndex: "Detail", ellipsis: true },
+      { title: "วันที่ยื่น", dataIndex: "Date_created", render: (date: string) => (date ? dayjs(date).format("DD/MM/YYYY") : '-') },
+      { title: "เจ้าหน้าที่ผู้รับเรื่อง", render: (record: Petition) => <span>{`${record.Staff?.FirstName} ${record.Staff?.LastName}`}</span> },
+      {
+        title: "การจัดการ",
+        key: "action",
+        render: (record: Petition) => {
+          if (isAdmin) {
+            return (
+              <Space>
+                <Button type="primary" ghost icon={<EditOutlined />} size="small" onClick={() => openEdit(record)}>แก้ไข</Button>
+                <Popconfirm title="ยืนยันการลบ?" onConfirm={() => handleDelete(record.ID)} okText="ยืนยัน" cancelText="ยกเลิก">
+                  <Button icon={<DeleteOutlined />} size="small" danger>ลบ</Button>
+                </Popconfirm>
+              </Space>
+            );
+          }
+          return null;
+        },
+      },
+    ],
+    [isAdmin],
+  );
+
   return (
-    <Layout>
-        <Header style={{ padding: '0 16px', background: colorBgContainer, display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderRadius: borderRadiusLG }}>
-            <Title level={3} style={{ margin: 0 }}>ระบบยื่นคำร้องทั่วไป</Title>
-            <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditing(false); setOpen(true); form.resetFields(); }}>
-            เพิ่มคำร้อง
-            </Button>
-        </Header>
-        <Content style={{ padding: '16px 0' }}>
-            <Card bordered={false}>
-                <Row justify="end" style={{ marginBottom: 16 }}>
-                    <Col>
-                        <Input
-                            placeholder="ค้นหา..."
-                            prefix={<SearchOutlined />}
-                            allowClear
-                            value={searchValue}
-                            onChange={e => setSearchValue(e.target.value)}
-                            style={{ width: 300 }}
-                        />
-                    </Col>
-                </Row>
-                <Table columns={columns} dataSource={filteredPetitions} rowKey="ID" loading={loading} bordered />
-            </Card>
-        </Content>
-      <Modal
-        title={editing ? "แก้ไขคำร้อง" : "เพิ่มคำร้อง"}
-        open={open}
-        onCancel={() => {
-          setOpen(false);
-          form.resetFields();
-        }}
-        footer={null}
-        width={600}
-      >
-        <Form
-          form={form}
-          layout="vertical"
-          onFinish={onFinish}
-          style={{marginTop: 24}}
-          initialValues={{
-            Status_ID: statuses.find((st) => st.Status === "รอดำเนินการ" || st.Status === "รอ...")?.Status_ID,
-          }}
-        >
+    <div style={{ maxWidth: 1600, margin: "0 auto", padding: 20 }}>
+      <Title level={2} style={{ color: "#1890ff" }}><FileTextOutlined /> ระบบยื่นคำร้องทั่วไป</Title>
+      <Card style={{ marginBottom: 24 }}>
         <Row gutter={16}>
-          <Col span={24}>
-            <Form.Item label="รายละเอียด" name="Detail" rules={[{ required: true, message: "กรุณากรอกรายละเอียด" }]}>
-                <Input.TextArea rows={3} placeholder="ระบุรายละเอียดคำร้อง..."/>
-            </Form.Item>
-          </Col>
-          <Col span={12}>
-            <Form.Item
-                label="ผู้ยื่นคำร้อง"
-                name="Inmate_Input"
-                rules={[{ required: true, message: "กรุณาพิมพ์และเลือกผู้ยื่นคำร้อง" }]}
-            >
-                <AutoComplete
-                options={inmateOptions}
-                onSearch={handleInmateSearch}
-                onSelect={onInmateSelect}
-                onChange={onInmateChange}
-                placeholder="พิมพ์ชื่อผู้ต้องขัง..."
-                />
-            </Form.Item>
-            <Form.Item name="Inmate_ID" hidden><Input /></Form.Item>
-           </Col>
-           <Col span={12}>
-            <Form.Item label="เจ้าหน้าที่" name="Staff_ID" rules={[{ required: true, message: "กรุณาเลือกเจ้าหน้าที่" }]}>
-                <Select showSearch filterOption={(input, option) => (String(option?.children)).toLowerCase().includes(input.toLowerCase())} placeholder="เลือกเจ้าหน้าที่ผู้รับเรื่อง">
-                {staffs.map((s) => (
-                    <Option key={s.StaffID} value={s.StaffID}>
-                    {s.FirstName} {s.LastName}
-                    </Option>
-                ))}
-                </Select>
-            </Form.Item>
-           </Col>
-           <Col span={12}>
-            <Form.Item label="ประเภทคำร้อง" name="Type_cum_ID" rules={[{ required: true, message: "กรุณาเลือกประเภทคำร้อง" }]}>
-                <Select placeholder="เลือกประเภท">
-                {types.map((t) => (
-                    <Option key={t.ID} value={t.ID}>
-                    {t.Type_cum_name}
-                    </Option>
-                ))}
-                </Select>
-            </Form.Item>
-           </Col>
-           <Col span={12}>
-            <Form.Item label="สถานะ" name="Status_ID" rules={[{ required: true, message: "กรุณาเลือกสถานะ" }]}>
-                <Select placeholder="เลือกสถานะ">
-                {statuses.map((st) => (
-                    <Option key={st.Status_ID} value={st.Status_ID}>
-                        {st.Status}
-                    </Option> 
-                ))}
-                </Select>
-            </Form.Item>
-           </Col>
-           <Col span={24}>
-            <Form.Item label="วันที่ยื่น" name="Date_created" rules={[{ required: true, message: "กรุณาเลือกวันที่ยื่น" }]}>
-                <DatePicker style={{ width: "100%" }} format="DD/MM/YYYY" />
-            </Form.Item>
-           </Col>
+          <Col xs={18}><Input placeholder="ค้นหา..." prefix={<SearchOutlined />} allowClear value={searchValue} onChange={e => setSearchValue(e.target.value)} /></Col>
+          <Col xs={6}><Button type="primary" icon={<PlusOutlined />} onClick={openAdd} block>เพิ่มคำร้อง</Button></Col>
         </Row>
-          <Row justify="end" style={{marginTop: 24}}>
-            <Space>
-              <Button onClick={() => setOpen(false)}>ยกเลิก</Button>
-              <Button loading={loading} type="primary" htmlType="submit">
-                {editing ? "บันทึก" : "เพิ่ม"}
-              </Button>
-            </Space>
+      </Card>
+      <Card>
+        <Table columns={columns} dataSource={filteredPetitions} rowKey="ID" loading={loading} pagination={{ pageSize: 10 }} />
+      </Card>
+
+      <Modal
+        title={editingPetition ? "แก้ไขคำร้อง" : "เพิ่มคำร้องใหม่"}
+        open={open}
+        onCancel={() => { setOpen(false); form.resetFields(); setEditingPetition(null); }}
+        footer={null}
+        destroyOnClose
+        width={800}
+      >
+        <Form form={form} layout="vertical" onFinish={onFinish} onFinishFailed={onFinishFailed}>
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item label="ผู้ยื่นคำร้อง" name="Inmate_Input" rules={[{ required: true, message: "กรุณาเลือกผู้ยื่นคำร้อง" }]}>
+                <AutoComplete options={inmateOptions} onSearch={handleInmateSearch} onSelect={onInmateSelect} onChange={onInmateChange} placeholder="พิมพ์ชื่อเพื่อค้นหา..." />
+              </Form.Item>
+              <Form.Item name="Inmate_ID" hidden><Input /></Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item label="ประเภทคำร้อง" name="Type_cum_ID" rules={[{ required: true, message: "กรุณาเลือกประเภท" }]}>
+                <Select placeholder="เลือกประเภทคำร้อง">{types.map((t) => <Option key={t.ID} value={t.ID}>{t.Type_cum_name}</Option>)}</Select>
+              </Form.Item>
+            </Col>
+            <Col span={24}>
+              <Form.Item label="รายละเอียดคำร้อง" name="Detail" rules={[{ required: true, message: "กรุณากรอกรายละเอียด" }]}>
+                <Input.TextArea rows={4} />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item label="วันที่ยื่น" name="Date_created" rules={[{ required: true, message: "กรุณาเลือกวันที่" }]}>
+                <DatePicker format="DD/MM/YYYY" style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item label="สถานะ" name="Status_ID" rules={[{ required: true, message: "กรุณาเลือกสถานะ" }]}>
+                <Select
+                  placeholder="เลือกสถานะ"
+                  disabled={!editingPetition}
+                >
+                  {(editingPetition ? statuses : statuses.filter(st => st.Status === 'รอ...'))
+                    .map((st) => (
+                      <Option key={st.Status_ID} value={st.Status_ID}>
+                        {st.Status}
+                      </Option>
+                  ))}
+                </Select>
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item label="เจ้าหน้าที่ผู้รับเรื่อง" name="Staff_ID" rules={[{ required: true, message: "กรุณาเลือกเจ้าหน้าที่" }]}>
+                <Select showSearch placeholder="เลือกเจ้าหน้าที่" optionFilterProp="children">{staffs.map((s) => <Option key={s.StaffID} value={s.StaffID}>{s.FirstName} {s.LastName}</Option>)}</Select>
+              </Form.Item>
+            </Col>
           </Row>
+          <div style={{ textAlign: "right", marginTop: 16 }}>
+            <Button onClick={() => setOpen(false)} style={{ marginRight: 8 }}>ยกเลิก</Button>
+            <Button type="primary" htmlType="submit" loading={loading}>บันทึกข้อมูล</Button>
+          </div>
         </Form>
       </Modal>
-    </Layout>
+    </div>
   );
 }
