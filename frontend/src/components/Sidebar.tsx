@@ -1,9 +1,8 @@
-// src/components/Sidebar.tsx
 import { NavLink } from "react-router-dom";
 import {
   LayoutDashboard, Users, Heart, Box, Smile, ChevronLeft,
   ClipboardList, DoorClosed, UserPen, Handshake, BookOpen,
-  CalendarDays, BookOpenCheck,
+  CalendarDays, BookOpenCheck, LogOut, ChevronRight
 } from "lucide-react";
 import "./Sidebar.css";
 import React from "react";
@@ -23,14 +22,13 @@ const fallbackRankName = (id?: number) => {
 
 export default function Sidebar() {
   const [user, setUser] = React.useState(() => getUser());
-  const [ranks, setRanks] = React.useState<Rank[]>(
-    () => {
-      try {
-        const cached = localStorage.getItem("ranksCache");
-        return cached ? JSON.parse(cached) : [];
-      } catch { return []; }
-    }
-  );
+  const [collapsed, setCollapsed] = React.useState(false);
+  const [ranks, setRanks] = React.useState<Rank[]>(() => {
+    try {
+      const cached = localStorage.getItem("ranksCache");
+      return cached ? JSON.parse(cached) : [];
+    } catch { return []; }
+  });
 
   React.useEffect(() => {
     const sync = () => setUser(getUser());
@@ -61,7 +59,6 @@ export default function Sidebar() {
       ? (ranks.find(r => r.RankID === user.rankId)?.RankName ?? fallbackRankName(user.rankId))
       : null;
 
-  // เมนู + สิทธิ์ที่อนุญาต (allowedRanks)
   const menu = [
     { to: "/", icon: <LayoutDashboard size={18} />, label: "แดชบอร์ด", allowed: [1, 2] },
     { to: "/prisonermanagement", icon: <UserPen size={18} />, label: "จัดการข้อมูลผู้ต้องขัง", allowed: [1, 2] },
@@ -71,22 +68,20 @@ export default function Sidebar() {
     { to: "/medicalexamination", icon: <Heart size={18} />, label: "ตรวจรักษา / โรค", allowed: [1, 2] },
     { to: "/inventory", icon: <Box size={18} />, label: "คลังพัสดุและการจัดซื้อ", allowed: [1, 2] },
     { to: "/score-behavior", icon: <Smile size={18} />, label: "คะแนนความประพฤติ", allowed: [1, 2] },
-    { to: "/visition", icon: <Handshake size={18} />, label: "เยี่ยมญาติ", allowed: [1, 2, 3] }, // ✅ ญาติเห็นได้
+    { to: "/visition", icon: <Handshake size={18} />, label: "เยี่ยมญาติ", allowed: [1, 2, 3] },
     { to: "/petition", icon: <BookOpen size={18} />, label: "ยื่นคำร้องทั่วไป", allowed: [1, 2] },
     { to: "/behavior", icon: <BookOpenCheck size={18} />, label: "การประเมินพฤติกรรม", allowed: [1, 2] },
     { to: "/activity", icon: <CalendarDays size={18} />, label: "ตารางกิจกรรมวิชาชีพ", allowed: [1, 2] },
-    { to: "/membermanagement", icon: <Users size={18} />, label: "จัดการสมาชิก", allowed: [1] }, // admin only
+    { to: "/membermanagement", icon: <Users size={18} />, label: "จัดการสมาชิก", allowed: [1] },
   ];
 
-  const visibleMenu = menu.filter(m =>
-    !user ? false : m.allowed.includes(user.rankId)
-  );
+  const visibleMenu = menu.filter(m => user && m.allowed.includes(user.rankId));
 
   return (
-    <div className="sidebar">
+    <div className={`sidebar ${collapsed ? "collapsed" : ""}`}>
       <div className="sidebar-header">
-        IPMS
-        {user && (
+        {!collapsed && "IPMS"}
+        {user && !collapsed && (
           <div style={{ fontSize: 12, lineHeight: 1.25, marginTop: 4 }}>
             <div>👤 {user.firstName} {user.lastName}</div>
             <div style={{ opacity: 0.8 }}>🏷️ {rankName}</div>
@@ -96,15 +91,21 @@ export default function Sidebar() {
 
       <nav className="menu">
         {visibleMenu.map(m => (
-          <NavLink key={m.to} to={m.to} className="menu-item">
+          <NavLink
+            key={m.to}
+            to={m.to}
+            className={({ isActive }) => `menu-item ${isActive ? "active" : ""}`}
+            end={m.to === "/"}
+            title={collapsed ? m.label : undefined}
+          >
             {m.icon}
-            <span>{m.label}</span>
+            {!collapsed && <span>{m.label}</span>}
           </NavLink>
         ))}
       </nav>
 
-      <div className="collapse-button">
-        <ChevronLeft size={20} />
+      <div className="collapse-button" onClick={() => setCollapsed(v => !v)}>
+        {collapsed ? <ChevronRight size={20} /> : <ChevronLeft size={20} />}
       </div>
 
       <button
@@ -114,7 +115,8 @@ export default function Sidebar() {
           window.location.href = "/login";
         }}
       >
-        ออกจากระบบ
+        <LogOut size={18} />
+        {!collapsed && "ออกจากระบบ"}
       </button>
     </div>
   );

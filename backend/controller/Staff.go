@@ -2,18 +2,15 @@ package controller
 
 import (
 	"net/http"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/sa-project/configs"
 	"github.com/sa-project/entity"
-	"golang.org/x/crypto/bcrypt"
-	"gorm.io/gorm"
 )
 
 // StaffInput - Struct สำหรับรับข้อมูล JSON จาก Frontend
+// ช่วยในการจัดการ-แปลงข้อมูลก่อนบันทึกลง entity จริง
 type StaffInput struct {
 	StaffID   uint   `json:"StaffID"`
 	Email     string `json:"Email"`
@@ -21,15 +18,15 @@ type StaffInput struct {
 	Password  string `json:"Password"`
 	FirstName string `json:"FirstName" binding:"required"`
 	LastName  string `json:"LastName" binding:"required"`
-	Birthday  string `json:"Birthday" binding:"required"` // ISO 8601
+	Birthday  string `json:"Birthday" binding:"required"` // รับเป็น string เพื่อแปลง
 	Status    string `json:"Status" binding:"required"`
 	Address   string `json:"Address"`
-	AdminID   *uint  `json:"AdminID"`
 	Gender_ID *uint  `json:"Gender_ID" binding:"required"`
-	RankID    *uint  `json:"RankID"`
 }
 
-// GetStaffs - ดึงข้อมูลเจ้าหน้าที่ทั้งหมด
+// --- Staff Handlers ---
+
+// GetStaffs - ดึงข้อมูลเจ้าหน้าที่ทั้งหมดพร้อมข้อมูลที่เกี่ยวข้อง (Preload)
 func GetStaffs(c *gin.Context) {
 	var staffs []entity.Staff
 	if err := configs.DB().Find(&staffs).Error; err != nil {
@@ -39,15 +36,11 @@ func GetStaffs(c *gin.Context) {
 	c.JSON(http.StatusOK, staffs)
 }
 
-// GetStaffByID - ดึงข้อมูลเจ้าหน้าที่คนเดียวตาม ID (preload ความสัมพันธ์)
+// GetStaffByID - ดึงข้อมูลเจ้าหน้าที่คนเดียวตาม ID พร้อมข้อมูลที่เกี่ยวข้อง (Preload)
 func GetStaffByID(c *gin.Context) {
 	id := c.Param("id")
 	var staff entity.Staff
-	if err := configs.DB().
-		Preload("Gender").
-		Preload("Admin").
-		Preload("Rank").
-		First(&staff, id).Error; err != nil {
+	if err := configs.DB().Preload("Gender").Preload("Admin").Preload("Rank").First(&staff, id).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Staff not found"})
 		return
 	}
@@ -57,22 +50,21 @@ func GetStaffByID(c *gin.Context) {
 // CreateStaff - สร้างเจ้าหน้าที่ใหม่
 func CreateStaff(c *gin.Context) {
 	var staff entity.Staff
+
+	// --- นี่คือส่วนที่สำคัญที่สุด ---
+	// Bind JSON ที่ส่งมาเข้ากับ struct staff
+	// ถ้ามี Error ให้ส่ง error นั้นกลับไปเลย
 	if err := c.ShouldBindJSON(&staff); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(staff.Password), 10)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Error while hashing password"})
-		return
-	}
-	staff.Password = string(hashedPassword)
-
+	// สร้างข้อมูล Staff ในฐานข้อมูล
 	if err := configs.DB().Create(&staff).Error; err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+
 	c.JSON(http.StatusCreated, staff)
 }
 
@@ -91,24 +83,21 @@ func UpdateStaff(c *gin.Context) {
 		return
 	}
 
-	// รองรับรูปแบบ ISO 8601 เช่น "2006-01-02T15:04:05Z07:00"
 	birthday, err := time.Parse("2006-01-02T15:04:05Z07:00", input.Birthday)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid Birthday format, use ISO 8601 format"})
 		return
 	}
 
+	// สร้าง object ใหม่สำหรับอัปเดตข้อมูล
 	updateData := entity.Staff{
 		Email:     input.Email,
-		Username:  input.Username,
-		Password:  input.Password,
 		FirstName: input.FirstName,
 		LastName:  input.LastName,
 		Birthday:  birthday,
 		Status:    input.Status,
 		Address:   input.Address,
 		Gender_ID: input.Gender_ID,
-		RankID:    input.RankID,
 	}
 
 	if err := configs.DB().Model(&staff).Updates(updateData).Error; err != nil {
@@ -116,69 +105,25 @@ func UpdateStaff(c *gin.Context) {
 		return
 	}
 
+	// ดึงข้อมูลล่าสุดหลังอัปเดตเพื่อส่งกลับ
 	configs.DB().Preload("Gender").Preload("Admin").Preload("Rank").First(&staff, id)
 	c.JSON(http.StatusOK, staff)
 }
 
-// DeleteStaff - ลบเจ้าหน้าที่
-// ถ้ายังมีการอ้างอิงในตาราง requestings:
-//   - ถ้าไม่ส่ง ?force=1 จะคืน 400 พร้อม refCount
-//   - ถ้าส่ง ?force=1 จะอัปเดต requestings.staff_id = NULL แล้วค่อยลบ
+// DeleteStaff - ลบข้อมูลเจ้าหน้าที่
 func DeleteStaff(c *gin.Context) {
-	// แปลง id เป็นตัวเลข
-	sid64, err := strconv.ParseUint(c.Param("id"), 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid staff id"})
-		return
-	}
-	sid := uint(sid64)
+	id := c.Param("id")
 
-	db := configs.DB()
-
-	// มี staff จริงไหม
-	var exists int64
-	if err := db.Model(&entity.Staff{}).Where("staff_id = ?", sid).Count(&exists).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to check staff"})
-		return
-	}
-	if exists == 0 {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Staff not found"})
+	// เพิ่มการตรวจสอบ: ห้ามลบเจ้าหน้าที่ถ้ามีคำขอเบิกที่อ้างอิงถึงอยู่
+	var count int64
+	configs.DB().Model(&entity.Requesting{}).Where("staff_id = ?", id).Count(&count)
+	if count > 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ไม่สามารถลบเจ้าหน้าที่ได้ เนื่องจากมีคำขอเบิกที่อ้างอิงถึงเจ้าหน้าที่คนนี้"})
 		return
 	}
 
-	// นับ dependency ใน requestings
-	var dep int64
-	if err := db.Model(&entity.Requesting{}).Where("staff_id = ?", sid).Count(&dep).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to check dependencies"})
-		return
-	}
-
-	force := c.Query("force") == "1" || strings.ToLower(c.Query("force")) == "true"
-	if dep > 0 && !force {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error":    "ไม่สามารถลบเจ้าหน้าที่ได้ เนื่องจากมีคำขอเบิกที่อ้างอิงถึงเจ้าหน้าที่คนนี้",
-			"refCount": dep,
-		})
-		return
-	}
-
-	// ทำงานแบบ transaction
-	if err := db.Transaction(func(tx *gorm.DB) error {
-		if dep > 0 && force {
-			// พยายามเคลียร์ FK ให้เป็น NULL ก่อน
-			if err := tx.Model(&entity.Requesting{}).
-				Where("staff_id = ?", sid).
-				Update("staff_id", nil).Error; err != nil {
-				return err
-			}
-		}
-		// ลบ staff
-		if err := tx.Delete(&entity.Staff{}, sid).Error; err != nil {
-			return err
-		}
-		return nil
-	}); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete staff: " + err.Error()})
+	if err := configs.DB().Delete(&entity.Staff{}, id).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete staff"})
 		return
 	}
 

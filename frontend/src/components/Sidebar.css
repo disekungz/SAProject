@@ -1,14 +1,19 @@
 .sidebar {
   width: 220px;
-  height: 100vh;
+  height: auto;          /* สูงตามเนื้อหา */
+  min-height: 100vh;     /* อย่างน้อยเต็มจอ */
   background-color: #011627;
   color: white;
   display: flex;
   flex-direction: column;
   padding: 20px 10px;
+  transition: width 0.2s;
 }
 
-/* ขยับ header ให้อยู่บนสุด */
+.sidebar.collapsed {
+  width: 70px;
+}
+
 .sidebar-header {
   font-size: 20px;
   font-weight: bold;
@@ -16,14 +21,13 @@
   text-align: center;
 }
 
-/* เมนูชิดบน */
 .menu {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  /* ❌ ลบ overflow-y:auto; กับ flex:1; ออก */
 }
 
-/* ปุ่มเมนู */
 .menu-item {
   display: flex;
   align-items: center;
@@ -44,11 +48,35 @@
   color: white;
 }
 
-/* ปุ่ม collapse อยู่ล่างสุด */
+.sidebar.collapsed .menu-item {
+  justify-content: center;
+}
+
+.sidebar.collapsed .menu-item span {
+  display: none;
+}
+
 .collapse-button {
-  margin-top: auto; /* <-- ให้มันดันไปล่าง */
   text-align: center;
   cursor: pointer;
   padding: 10px;
   border-top: 1px solid rgba(255, 255, 255, 0.1);
+  margin-top: auto; /* ดันไปล่าง */
+}
+
+button {
+  margin-top: 10px;
+  background: transparent;
+  border: none;
+  color: white;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+}
+
+button:hover {
+  background-color: #1e3a8a;
+  border-radius: 8px;
 }
