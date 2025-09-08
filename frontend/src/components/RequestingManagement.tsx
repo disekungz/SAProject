@@ -58,7 +58,9 @@ const RequestingManagement: React.FC = () => {
   const [statuses, setStatuses] = useState<Status[]>([]);
   const [loading, setLoading] = useState(false);
   const [isModalVisible, setIsModalVisible] = useState(false);
-  const [editingRequesting, setEditingRequesting] = useState<Requesting | null>(null);
+  const [editingRequesting, setEditingRequesting] = useState<Requesting | null>(
+    null
+  );
   const [isSubmittingStatus, setIsSubmittingStatus] = useState(false);
   const [form] = Form.useForm();
   const [searchTerm, setSearchTerm] = useState("");
@@ -66,12 +68,13 @@ const RequestingManagement: React.FC = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [requestingsRes, parcelsRes, staffsRes, statusesRes] = await Promise.all([
-        axios.get(`${API_URL}/requestings`),
-        axios.get(`${API_URL}/parcels`),
-        axios.get(`${API_URL}/staffs`),
-        axios.get(`${API_URL}/statuses`),
-      ]);
+      const [requestingsRes, parcelsRes, staffsRes, statusesRes] =
+        await Promise.all([
+          axios.get(`${API_URL}/requestings`),
+          axios.get(`${API_URL}/parcels`),
+          axios.get(`${API_URL}/staffs`),
+          axios.get(`${API_URL}/statuses`),
+        ]);
       setRequestings(requestingsRes.data || []);
       setParcels(parcelsRes.data || []);
       setStaffs(staffsRes.data || []);
@@ -133,7 +136,8 @@ const RequestingManagement: React.FC = () => {
       await fetchData(); // ดึงใหม่ให้ได้ความสัมพันธ์ Parcel/Staff/Status ครบ
     } catch (error) {
       console.error("Error creating requesting:", error);
-      const errorMessage = (error as any).response?.data?.error || "ไม่สามารถสร้างคำร้องได้";
+      const errorMessage =
+        (error as any).response?.data?.error || "ไม่สามารถสร้างคำร้องได้";
       message.error(errorMessage);
     }
   };
@@ -149,7 +153,9 @@ const RequestingManagement: React.FC = () => {
       const newStatusObject = statuses.find((s) => s.Status_ID === newStatusId);
       setRequestings((prev) =>
         prev.map((req) =>
-          req.Requesting_ID === id ? { ...req, Status_ID: newStatusId, Status: newStatusObject } : req
+          req.Requesting_ID === id
+            ? { ...req, Status_ID: newStatusId, Status: newStatusObject }
+            : req
         )
       );
       setIsModalVisible(false);
@@ -165,11 +171,17 @@ const RequestingManagement: React.FC = () => {
 
   const filteredRequestings = requestings.filter((req) => {
     const parcelName =
-      req.Parcel?.ParcelName || parcels.find((p) => p.PID === req.PID)?.ParcelName || "";
+      req.Parcel?.ParcelName ||
+      parcels.find((p) => p.PID === req.PID)?.ParcelName ||
+      "";
     const staffFirst =
-      req.Staff?.FirstName || staffs.find((s) => s.StaffID === req.StaffID)?.FirstName || "";
+      req.Staff?.FirstName ||
+      staffs.find((s) => s.StaffID === req.StaffID)?.FirstName ||
+      "";
     const staffLast =
-      req.Staff?.LastName || staffs.find((s) => s.StaffID === req.StaffID)?.LastName || "";
+      req.Staff?.LastName ||
+      staffs.find((s) => s.StaffID === req.StaffID)?.LastName ||
+      "";
 
     const term = searchTerm.toLowerCase();
     return (
@@ -186,7 +198,9 @@ const RequestingManagement: React.FC = () => {
       key: "parcel_name",
       render: (_: unknown, record: Requesting) => {
         const nameFromObj = record.Parcel?.ParcelName;
-        const nameFromList = parcels.find((p) => p.PID === record.PID)?.ParcelName;
+        const nameFromList = parcels.find(
+          (p) => p.PID === record.PID
+        )?.ParcelName;
         return nameFromObj || nameFromList || "-";
       },
     },
@@ -196,7 +210,9 @@ const RequestingManagement: React.FC = () => {
       key: "staff_name",
       render: (_: any, record: Requesting) => {
         const nameFromObj = record.Staff
-          ? `${record.Staff.FirstName || ""} ${record.Staff.LastName || ""}`.trim()
+          ? `${record.Staff.FirstName || ""} ${
+              record.Staff.LastName || ""
+            }`.trim()
           : "";
         if (nameFromObj) return nameFromObj;
 
@@ -216,16 +232,22 @@ const RequestingManagement: React.FC = () => {
       title: "สถานะคำขอ",
       key: "status",
       render: (_: any, record: Requesting) => {
-        let color: "default" | "success" | "error" = "default";
+        let color: "default" | "success" | "error" | "warning" = "default";
         if (record.Status_ID === 2) color = "success";
         if (record.Status_ID === 3) color = "error";
+        if (record.Status_ID === 4) color = "warning";
 
-        const statusName =
-          record.Status?.Status ||
-          statuses.find((s) => s.Status_ID === record.Status_ID)?.Status ||
-          "-";
-
-        return <Tag color={color}>{String(statusName).toUpperCase()}</Tag>;
+        return (
+          <Tag color={color}>
+            {String(
+              // ย้ายนิพจน์ทั้งหมดมาไว้ตรงนี้
+              record.Status?.Status ||
+                statuses.find((s) => s.Status_ID === record.Status_ID)
+                  ?.Status ||
+                "-"
+            ).toUpperCase()}
+          </Tag>
+        );
       },
     },
     {
@@ -260,7 +282,11 @@ const RequestingManagement: React.FC = () => {
         style={{ marginBottom: 16 }}
         allowClear
       />
-      <Button type="primary" onClick={() => showModal()} style={{ marginBottom: 16 }}>
+      <Button
+        type="primary"
+        onClick={() => showModal()}
+        style={{ marginBottom: 16 }}
+      >
         เพิ่มคำร้อง
       </Button>
       <Table
@@ -337,13 +363,22 @@ const RequestingManagement: React.FC = () => {
                 validator(_, value) {
                   const num = Number(value);
                   if (!value || Number.isNaN(num)) {
-                    return Promise.reject(new Error("กรุณากรอกจำนวนให้ถูกต้อง"));
+                    return Promise.reject(
+                      new Error("กรุณากรอกจำนวนให้ถูกต้อง")
+                    );
                   }
-                  if (num < 1) return Promise.reject(new Error("จำนวนต้องมีค่าอย่างน้อย 1"));
+                  if (num < 1)
+                    return Promise.reject(
+                      new Error("จำนวนต้องมีค่าอย่างน้อย 1")
+                    );
                   const selectedParcelId = getFieldValue("PID");
-                  const selectedParcel = parcels.find((p) => p.PID === selectedParcelId);
+                  const selectedParcel = parcels.find(
+                    (p) => p.PID === selectedParcelId
+                  );
                   if (selectedParcel && num > selectedParcel.Quantity) {
-                    return Promise.reject(new Error("จำนวนเกินกว่าที่มีในสต็อก"));
+                    return Promise.reject(
+                      new Error("จำนวนเกินกว่าที่มีในสต็อก")
+                    );
                   }
                   return Promise.resolve();
                 },
@@ -358,7 +393,10 @@ const RequestingManagement: React.FC = () => {
             name="Request_Date"
             rules={[{ required: true, message: "กรุณาเลือกวันที่" }]}
           >
-            <DatePicker style={{ width: "100%" }} disabled={!!editingRequesting} />
+            <DatePicker
+              style={{ width: "100%" }}
+              disabled={!!editingRequesting}
+            />
           </Form.Item>
 
           <Form.Item
