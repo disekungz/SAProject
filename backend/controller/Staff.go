@@ -7,7 +7,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/sa-project/configs"
 	"github.com/sa-project/entity"
-	"golang.org/x/crypto/bcrypt"
 )
 
 // StaffInput - Struct สำหรับรับข้อมูล JSON จาก Frontend
@@ -24,19 +23,18 @@ type StaffInput struct {
 	Address   string `json:"Address"`
 	AdminID   *uint  `json:"AdminID"`
 	Gender_ID *uint  `json:"Gender_ID" binding:"required"`
-	RankID    *uint  `json:"RankID"`
 }
 
 // --- Staff Handlers ---
 
 // GetStaffs - ดึงข้อมูลเจ้าหน้าที่ทั้งหมดพร้อมข้อมูลที่เกี่ยวข้อง (Preload)
 func GetStaffs(c *gin.Context) {
-    var staffs []entity.Staff
-    if err := configs.DB().Find(&staffs).Error; err != nil {
-        c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch staffs"})
-        return
-    }
-    c.JSON(http.StatusOK, staffs)
+	var staffs []entity.Staff
+	if err := configs.DB().Find(&staffs).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch staffs"})
+		return
+	}
+	c.JSON(http.StatusOK, staffs)
 }
 
 // GetStaffByID - ดึงข้อมูลเจ้าหน้าที่คนเดียวตาม ID พร้อมข้อมูลที่เกี่ยวข้อง (Preload)
@@ -61,16 +59,6 @@ func CreateStaff(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-
-	// --- การจัดการรหัสผ่าน (สำคัญต่อความปลอดภัย) ---
-	// เข้ารหัสผ่านที่ได้รับมาก่อนบันทึกลง DB
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(staff.Password), 10)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Error while hashing password"})
-		return
-	}
-	staff.Password = string(hashedPassword)
-
 
 	// สร้างข้อมูล Staff ในฐานข้อมูล
 	if err := configs.DB().Create(&staff).Error; err != nil {
@@ -105,15 +93,12 @@ func UpdateStaff(c *gin.Context) {
 	// สร้าง object ใหม่สำหรับอัปเดตข้อมูล
 	updateData := entity.Staff{
 		Email:     input.Email,
-		Username:  input.Username,
-		Password:  input.Password,
 		FirstName: input.FirstName,
 		LastName:  input.LastName,
 		Birthday:  birthday,
 		Status:    input.Status,
 		Address:   input.Address,
 		Gender_ID: input.Gender_ID,
-		RankID:    input.RankID,
 	}
 
 	if err := configs.DB().Model(&staff).Updates(updateData).Error; err != nil {
