@@ -230,12 +230,19 @@ export default function PrisonerManagement() {
       dataIndex: "ReleaseDate",
       key: "status",
       render: (releaseDate: string | null) => {
-        const tag = releaseDate ? (
-          <Tag color="green">ปล่อยตัวแล้ว</Tag>
-        ) : (
-          <Tag color="red">คุมขังอยู่</Tag>
-        );
-        return tag;
+        // เงื่อนไขที่ 1: ไม่มีวันปล่อยตัว
+        if (!releaseDate) {
+          return <Tag color="red">คุมขังอยู่</Tag>;
+        }
+
+        // เงื่อนไขที่ 2: มีวันปล่อยตัว แต่วันนั้นเป็นวันในอนาคต
+        // .isAfter(dayjs()) จะคืนค่า true ถ้า releaseDate อยู่หลังวันปัจจุบัน
+        if (dayjs(releaseDate).isAfter(dayjs())) {
+          return <Tag color="red">คุมขังอยู่</Tag>;
+        }
+
+        // เงื่อนไขที่ 3: มีวันปล่อยตัว และเป็นวันปัจจุบันหรืออดีต
+        return <Tag color="green">ปล่อยตัวแล้ว</Tag>;
       },
     },
     {
