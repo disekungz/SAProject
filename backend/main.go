@@ -4,6 +4,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/sa-project/configs"
 	"github.com/sa-project/controller"
+	"github.com/sa-project/middleware"
 )
 
 const PORT = "8088"
@@ -17,8 +18,13 @@ func main() {
 
 	r := gin.Default()
 	r.Use(CORSMiddleware())
+	r.Use(middleware.AuthOptional())
 
 	api := r.Group("/api")
+	api.POST("/auth/register", controller.Register)
+	api.POST("/auth/login", controller.Login)
+	api.GET("/me", middleware.AuthRequired(), controller.Me)
+
 	{
 		// --- Prisoner & Related Routes ---
 		api.GET("/prisoners", controller.GetPrisoners)
@@ -103,8 +109,15 @@ func main() {
 		api.POST("/enrollments", controller.EnrollParticipant)
 		api.PUT("/enrollments/:id/status", controller.UpdateEnrollmentStatus)
 		api.DELETE("/enrollments/:id", controller.DeleteEnrollment)
-		api.GET("/members", controller.GetMembers)
+		api.GET("/members", controller.GetMember)
 		api.GET("/behaviorcriteria", controller.GetBehaviorCriteria)
+
+		// --- Member Management ---
+		api.PATCH("/members/:id", controller.UpdateMember)        // เปลี่ยน Rank (และอนาคตเปลี่ยนฟิลด์อื่น)
+		api.PUT("/members/:id/rank", controller.UpdateMemberRank) // ทางลัดเฉพาะเปลี่ยน Rank
+		api.DELETE("/member/:id", controller.DeleteMemberById)    // ใส่เอกพจน์ให้ตรง FE
+		// ถ้าอยากเคร่งสิทธิ์ ให้ครอบด้วย middleware.AuthRequired() ได้
+
 	}
 
 	r.Run("localhost:" + PORT)
