@@ -89,6 +89,7 @@ const mapEvaluation = (d: any): BehaviorEvaluationRecord => {
 };
 
 export default function BehaviorEvaluation() {
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
   const [prisoners, setPrisoners] = useState<Prisoner[]>([]);
   const [criteria, setCriteria] = useState<{ bId: number; criterion: string }[]>([]);
   const [members, setMembers] = useState<{ mId: number; firstName: string; lastName: string }[]>([]);
@@ -269,6 +270,7 @@ export default function BehaviorEvaluation() {
       key: "actions",
       width: 100,
       fixed: "right" as const,
+      // ✅ STEP 2: แก้ไข render function ทั้งหมดที่นี่
       render: (_: any, record: BehaviorEvaluationRecord) => {
         const items = [
           {
@@ -281,22 +283,31 @@ export default function BehaviorEvaluation() {
             key: "delete",
             icon: <DeleteOutlined />,
             danger: true,
-            label: (
-              <Popconfirm
-                title="แน่ใจหรือไม่ว่าจะลบ?"
-                onConfirm={() => handleDelete(record.id)}
-                okText="ลบ"
-                cancelText="ยกเลิก"
-              >
-                ลบ
-              </Popconfirm>
-            ),
+            label: "ลบ",
+            // เปลี่ยน onClick ให้ไปตั้งค่า ID ที่จะลบใน State แทน
+            onClick: () => setConfirmDeleteId(record.id ?? null),
           },
         ];
+
         return (
-          <Dropdown menu={{ items }} trigger={["click"]}>
-            <Button icon={<MoreOutlined />} />
-          </Dropdown>
+          // Popconfirm จะย้ายมาครอบ Dropdown ตรงนี้
+          <Popconfirm
+            title="แน่ใจหรือไม่ว่าจะลบ?"
+            // ควบคุมการแสดงผลด้วย State
+            open={confirmDeleteId === record.id}
+            onConfirm={() => {
+              handleDelete(record.id);
+              setConfirmDeleteId(null); // ซ่อน Popconfirm หลังลบ
+            }}
+            onCancel={() => setConfirmDeleteId(null)} // ซ่อน Popconfirm หลังยกเลิก
+            okText="ลบ"
+            cancelText="ยกเลิก"
+            okButtonProps={{ loading: loading }}
+          >
+            <Dropdown menu={{ items }} trigger={["click"]}>
+              <Button icon={<MoreOutlined />} />
+            </Dropdown>
+          </Popconfirm>
         );
       },
     },
