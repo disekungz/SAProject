@@ -20,12 +20,12 @@ const { RangePicker } = DatePicker;
 const { Option } = Select;
 const { TextArea } = Input;
 
-// ✅ ใช้รูปแบบเดียวกับ BehaviorEvaluation.tsx
 const BASE = "http://localhost:8088/api";
 
 // ---------- Types ----------
 interface PrisonerRecord {
   Prisoner_ID: number;
+  Inmate_ID: string;
   FirstName: string;
   LastName: string;
 }
@@ -34,6 +34,7 @@ interface MemberRecord {
   MID: number;
   FirstName: string;
   LastName: string;
+  RankID: number; // ✅ 1. เพิ่ม RankID ใน Type
 }
 
 interface EnrollmentRecord {
@@ -73,6 +74,7 @@ interface ActivityFormValues {
 // ---------- Mappers ----------
 const mapPrisoner = (p: any): PrisonerRecord => ({
   Prisoner_ID: p.Prisoner_ID ?? p.prisonerId ?? p.id,
+  Inmate_ID: p.Inmate_ID ?? p.inmateId ?? "",
   FirstName: p.FirstName ?? p.firstName ?? "",
   LastName: p.LastName ?? p.lastName ?? "",
 });
@@ -81,6 +83,7 @@ const mapMember = (m: any): MemberRecord => ({
   MID: m.MID ?? m.mId ?? m.id,
   FirstName: m.FirstName ?? m.firstName ?? "",
   LastName: m.LastName ?? m.lastName ?? "",
+  RankID: m.RankID ?? m.rankId ?? 0, // ✅ 2. เพิ่ม RankID ใน Mapper
 });
 
 const mapEnrollment = (e: any): EnrollmentRecord => ({
@@ -94,7 +97,6 @@ const mapSchedule = (s: any): ActivityRecord => {
   const act = s.activity ?? s.Activity ?? {};
   const mem = s.member ?? s.Member ?? {};
   const enroll = s.enrollment ?? s.Enrollment ?? [];
-
   const startDate = s.startDate ?? s.StartDate ?? null;
   const endDate = s.endDate ?? s.EndDate ?? null;
 
@@ -121,7 +123,7 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
   const [form] = Form.useForm<ActivityFormValues>();
   const [participantForm] = Form.useForm();
   const [withdrawalForm] = Form.useForm();
-
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
   const [data, setData] = useState<ActivityRecord[]>([]);
   const [filtered, setFiltered] = useState<ActivityRecord[]>([]);
   const [prisoners, setPrisoners] = useState<PrisonerRecord[]>([]);
@@ -135,7 +137,7 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
   const [withdrawalModalOpen, setWithdrawalModalOpen] = useState(false);
   const [currentEnrollment, setCurrentEnrollment] = useState<EnrollmentRecord | null>(null);
 
-  // ---------- API (axios แบบเดียวกับ BehaviorEvaluation) ----------
+  // ---------- API ----------
   const fetchSchedules = async () => {
     try {
       const res = await axios.get(`${BASE}/schedules`);
@@ -155,11 +157,9 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
         axios.get(`${BASE}/prisoners`),
         axios.get(`${BASE}/members`),
       ]);
-
       const schedules = (schedulesRes.data || []).map(mapSchedule);
       setData(schedules);
       setFiltered(schedules);
-
       setPrisoners((prisonersRes.data || []).map(mapPrisoner));
       setMembers((membersRes.data || []).map(mapMember));
     } catch {
@@ -207,7 +207,7 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
     form.setFieldsValue({
       activityName: record.activity.activityName,
       description: record.activity.description,
-      instructorId: record.member.MID, // ✅ MID
+      instructorId: record.member.MID,
       room: record.activity.location,
       maxParticipants: record.max,
       dateRange: [
@@ -234,7 +234,6 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
       startTime: values.timeRange?.[0] ? values.timeRange[0].format("HH:mm:ss") : null,
       endTime: values.timeRange?.[1] ? values.timeRange[1].format("HH:mm:ss") : null,
     };
-
     try {
       setLoading(true);
       if (editing) {
@@ -287,7 +286,6 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
 
   const handleAddParticipant = async (values: { prisonerId: number }) => {
     if (!currentActivity) return;
-
     const currentCount = (currentActivity.enrollment || []).filter((e) => e.status === 1).length;
     if (currentCount >= currentActivity.max) {
       message.warning("กิจกรรมนี้มีผู้เข้าร่วมเต็มแล้ว");
@@ -297,7 +295,6 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
       message.warning("ผู้ต้องขังคนนี้อยู่ในรายการแล้ว");
       return;
     }
-
     try {
       setLoading(true);
       await axios.post(`${BASE}/enrollments`, {
@@ -357,7 +354,7 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
       setLoading(false);
     }
   };
-
+  
   const actionMenuItems = (record: ActivityRecord): MenuProps["items"] => [
     {
       key: "edit",
@@ -369,20 +366,11 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
       key: "delete",
       icon: <DeleteOutlined />,
       danger: true,
-      label: (
-        <Popconfirm
-          title="แน่ใจหรือไม่ว่าจะลบ?"
-          onConfirm={() => handleDelete(record.schedule_ID)}
-          okText="ลบ"
-          cancelText="ยกเลิก"
-        >
-          ลบ
-        </Popconfirm>
-      ),
+      label: "ลบ",
+      onClick: () => setConfirmDeleteId(record.schedule_ID),
     },
   ];
 
-  // ---------- Columns ----------
   const columns = [
     { title: "ลำดับ", render: (_: any, __: any, idx: number) => <Text>{idx + 1}</Text>, width: 70 },
     {
@@ -433,9 +421,22 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
           <Button icon={<EyeOutlined />} onClick={() => openParticipantModal(record)}>
             ดูรายชื่อ
           </Button>
-          <Dropdown menu={{ items: actionMenuItems(record) }} trigger={["click"]}>
-            <Button icon={<MoreOutlined />} />
-          </Dropdown>
+          <Popconfirm
+            title="แน่ใจหรือไม่ว่าจะลบ?"
+            open={confirmDeleteId === record.schedule_ID}
+            onConfirm={() => {
+              handleDelete(record.schedule_ID);
+              setConfirmDeleteId(null);
+            }}
+            onCancel={() => setConfirmDeleteId(null)}
+            okText="ลบ"
+            cancelText="ยกเลิก"
+            okButtonProps={{ loading: loading }}
+          >
+            <Dropdown menu={{ items: actionMenuItems(record) }} trigger={["click"]}>
+              <Button icon={<MoreOutlined />} />
+            </Dropdown>
+          </Popconfirm>
         </Space>
       ),
     },
@@ -443,7 +444,7 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
 
   const participantColumns = [
     { title: "ลำดับ", render: (_: any, __: any, idx: number) => idx + 1, width: 70 },
-    { title: "รหัสผู้ต้องขัง", dataIndex: ["prisoner", "Prisoner_ID"] },
+    { title: "รหัสผู้ต้องขัง", dataIndex: ["prisoner", "Inmate_ID"] },
     {
       title: "ชื่อ-นามสกุล",
       render: (_: any, r: EnrollmentRecord) =>
@@ -527,7 +528,9 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
             <Col xs={24} sm={12}>
               <Form.Item label="วิทยากร/ครูฝึก" name="instructorId" rules={[{ required: true }]}>
                 <Select showSearch placeholder="เลือกวิทยากร" optionFilterProp="children">
-                  {members.map((m) => (
+                  {members
+                    .filter(m => m.RankID === 2) // ✅ 3. กรองให้เหลือเฉพาะ RankID 2
+                    .map((m) => (
                     <Option key={m.MID} value={m.MID}>
                       {m.FirstName} {m.LastName}
                     </Option>
@@ -602,7 +605,7 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
             >
               {prisoners.map((p) => (
                 <Option key={p.Prisoner_ID} value={p.Prisoner_ID}>
-                  {p.Prisoner_ID} - {p.FirstName} {p.LastName}
+                  {p.Inmate_ID} - {p.FirstName} {p.LastName}
                 </Option>
               ))}
             </Select>
