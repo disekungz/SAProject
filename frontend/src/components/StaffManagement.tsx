@@ -46,8 +46,6 @@ interface Rank {
 interface Staff {
   StaffID?: number;
   Email?: string;
-  Username: string;
-  Password?: string;
   FirstName: string;
   LastName: string;
   Birthday: string | Dayjs;
@@ -156,7 +154,6 @@ export default function StaffManagement() {
           (s.FirstName && s.FirstName.toLowerCase().includes(lower)) ||
           (s.LastName && s.LastName.toLowerCase().includes(lower)) ||
           (s.StaffID && s.StaffID.toString().includes(lower)) ||
-          (s.Username && s.Username.toLowerCase().includes(lower)) ||
           (s.Email && s.Email.toLowerCase().includes(lower))
       )
     );
@@ -177,7 +174,6 @@ export default function StaffManagement() {
       Gender_ID: record.Gender_ID || record.Gender?.Gender_ID,
       RankID: record.RankID || record.Rank?.RankID,
     });
-    form.setFieldsValue({ Password: "" });
     setModalOpen(true);
   };
 
@@ -192,10 +188,6 @@ export default function StaffManagement() {
   };
 
   const onFinish = async (values: any) => {
-    if (editing && !values.Password) {
-      delete values.Password;
-    }
-
     const payload = {
       ...values,
       Birthday: values.Birthday ? values.Birthday.toISOString() : null,
@@ -222,7 +214,7 @@ export default function StaffManagement() {
     }
   };
 
-  // --- ปรับปรุง Table columns ให้อ่านง่ายขึ้น ---
+  // --- Table columns ---
   const columns = [
     {
       title: "#",
@@ -245,55 +237,14 @@ export default function StaffManagement() {
       ),
     },
     {
-      title: "ข้อมูลส่วนตัว",
-      key: "personal",
-      width: 220,
-      render: (_: any, r: Staff) => {
-        const genderName =
-          r.Gender?.Gender ||
-          genders.find((g) => g.Gender_ID === r.Gender_ID)?.Gender ||
-          "-";
-        const age = calculateAge(r.Birthday);
-
-        return (
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <Avatar
-              icon={<UserOutlined />}
-              style={{
-                backgroundColor: getGenderColor(genderName),
-                flexShrink: 0,
-              }}
-            />
-            <div style={{ minWidth: 0 }}>
-              <div
-                style={{
-                  fontWeight: "bold",
-                  fontSize: "14px",
-                  whiteSpace: "nowrap",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                }}
-              >
-                {r.FirstName} {r.LastName}
-              </div>
-              <div
-                style={{
-                  color: "#666",
-                  fontSize: "12px",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                  marginTop: 2,
-                }}
-              >
-                <span>{genderName}</span>
-                <span>•</span>
-                <span>{age} ปี</span>
-              </div>
-            </div>
-          </div>
-        );
-      },
+      title: "ชื่อ-นามสกุล",
+      key: "name",
+      width: 200,
+      render: (_: any, r: Staff) => (
+        <span style={{ fontWeight: "bold" }}>
+          {r.FirstName} {r.LastName}
+        </span>
+      ),
     },
     {
       title: "ตำแหน่ง & สถานะ",
@@ -322,47 +273,6 @@ export default function StaffManagement() {
       },
     },
     {
-      title: "ข้อมูลติดต่อ",
-      key: "contact",
-      width: 200,
-      render: (_: any, r: Staff) => (
-        <div style={{ fontSize: "12px" }}>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              marginBottom: 4,
-            }}
-          >
-            <UserOutlined style={{ color: "#666" }} />
-            <span style={{ fontWeight: "bold" }}>{r.Username}</span>
-          </div>
-          {r.Email && (
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                color: "#666",
-              }}
-            >
-              <MailOutlined />
-              <span
-                style={{
-                  whiteSpace: "nowrap",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                }}
-              >
-                {r.Email}
-              </span>
-            </div>
-          )}
-        </div>
-      ),
-    },
-    {
       title: "วันเกิด",
       dataIndex: "Birthday",
       width: 100,
@@ -372,6 +282,14 @@ export default function StaffManagement() {
           <CalendarOutlined style={{ color: "#666", marginRight: 4 }} />
           {dayjs(d).format("DD/MM/YY")}
         </div>
+      ),
+    },
+    {
+      title: "อีเมล",
+      dataIndex: "Email",
+      width: 200,
+      render: (email: string) => (
+        <div style={{ fontSize: "12px", color: "#666" }}>{email || "-"}</div>
       ),
     },
     {
@@ -448,16 +366,13 @@ export default function StaffManagement() {
           <UserOutlined style={{ marginRight: 12 }} />
           จัดการเจ้าหน้าที่
         </Title>
-        <p style={{ color: "#666", margin: "8px 0 0 0" }}>
-          ระบบจัดการข้อมูลเจ้าหน้าที่ในองค์กร
-        </p>
       </div>
 
       <Card style={{ marginBottom: 24 }} bodyStyle={{ padding: "16px 24px" }}>
         <Row gutter={16} align="middle">
           <Col xs={24} sm={16} md={18}>
             <Input
-              placeholder="ค้นหาด้วย รหัส, ชื่อ-นามสกุล, Username หรือ Email"
+              placeholder="ค้นหาด้วย รหัส, ชื่อ-นามสกุล หรือ Email"
               allowClear
               size="large"
               prefix={<SearchOutlined style={{ color: "#1890ff" }} />}
@@ -496,12 +411,11 @@ export default function StaffManagement() {
             pageSizeOptions: ["5", "8", "10", "20"],
           }}
           bordered
-          scroll={{ x: 1400 }}
+          scroll={{ x: 1200 }}
           size="small"
           style={{
             fontSize: "14px",
           }}
-          rowClassName={(_, index) => (index % 2 === 0 ? "" : "")}
         />
       </Card>
 
@@ -616,49 +530,20 @@ export default function StaffManagement() {
 
           <div style={{ marginBottom: 16 }}>
             <Title level={5} style={{ color: "#666", marginBottom: 16 }}>
-              ข้อมูลบัญชีผู้ใช้
+              ข้อมูลติดต่อ
             </Title>
             <Row gutter={16}>
-              <Col xs={24} sm={12}>
-                <Form.Item
-                  label="Username"
-                  name="Username"
-                  rules={[{ required: true, message: "กรุณากรอก Username" }]}
-                >
-                  <Input size="large" />
-                </Form.Item>
-              </Col>
-              <Col xs={24} sm={12}>
-                <Form.Item
-                  label="Password"
-                  name="Password"
-                  rules={[
-                    { required: !editing, message: "กรุณากรอก Password" },
-                  ]}
-                  help={
-                    editing ? "เว้นว่างไว้หากไม่ต้องการเปลี่ยนรหัสผ่าน" : ""
-                  }
-                >
-                  <Input.Password size="large" />
-                </Form.Item>
-              </Col>
               <Col xs={24}>
                 <Form.Item label="อีเมล" name="Email">
                   <Input size="large" type="email" />
                 </Form.Item>
               </Col>
+              <Col xs={24}>
+                <Form.Item label="ที่อยู่" name="Address">
+                  <Input.TextArea rows={3} size="large" />
+                </Form.Item>
+              </Col>
             </Row>
-          </div>
-
-          <div style={{ marginBottom: 24 }}>
-            <Title level={5} style={{ color: "#666", marginBottom: 16 }}>
-              ข้อมูลติดต่อ
-            </Title>
-            <Col xs={24}>
-              <Form.Item label="ที่อยู่" name="Address">
-                <Input.TextArea rows={3} size="large" />
-              </Form.Item>
-            </Col>
           </div>
 
           <div
