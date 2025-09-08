@@ -1,109 +1,114 @@
 import { useState, useEffect, useMemo } from "react";
 import {
-  Input,
-  Button,
-  Card,
-  Form,
-  DatePicker,
-  Row,
-  Col,
-  Typography,
-  message,
-  Select,
-  Table,
-  Space,
-  Modal,
-  Popconfirm,
-  Tag,
-  Empty,
-  Divider,
-  Badge,
+  Input, Button, Card, Form, DatePicker, Row, Col, Typography, message,
+  Select, Table, Space, Modal, Popconfirm, Tag, Empty, Badge, Avatar,
 } from "antd";
 import {
-  SearchOutlined,
-  EditOutlined,
-  DeleteOutlined,
-  PlusOutlined,
-  UserOutlined,
-  EnvironmentOutlined,
-  CalendarOutlined,
-  ReloadOutlined,
-  FilterOutlined,
+  SearchOutlined, EditOutlined, DeleteOutlined, PlusOutlined, UserOutlined,
+  ReloadOutlined, MailOutlined,
 } from "@ant-design/icons";
 import axios from "axios";
 import dayjs, { Dayjs } from "dayjs";
+import type { ColumnsType } from "antd/es/table";
 
-const { Title, Text } = Typography;
-const { Option } = Select;
+const { Title, Text, Paragraph } = Typography;
 
+/* =========================
+ * Types
+ * =======================*/
+type WorkStatus = "ทำงานอยู่" | "ไม่ได้ทำงาน";
 interface Gender {
   Gender_ID: number;
   Gender: string;
 }
-
 interface Staff {
-  StaffID?: number;
+  StaffID: number; 
   Email?: string;
   FirstName: string;
   LastName: string;
   Birthday: string | Dayjs;
-  Status: string;
+  Status: WorkStatus;
   Address: string;
-  Gender_ID?: number;
+  Gender_ID: number;
   Gender?: Gender;
 }
 
-const generateStaffID = () => Math.floor(100 + Math.random() * 900);
+/* =========================
+ * Config / Constants
+ * =======================*/
+const API_BASE = "http://localhost:8088/api";
+const LAYOUT = {
+  page: { maxWidth: 1400, margin: "0 auto", padding: 24 },
+  toolbarCard: { marginBottom: 16 },
+  tableScroll: { x: 1000 },
+} as const;
 
-const getStatusColor = (status: string) => {
-  switch (status) {
-    case "ทำงานอยู่":
-      return "green";
-    case "ไม่ได้ทำงาน":
-      return "red";
-    default:
-      return "default";
-  }
+/* =========================
+ * Utils
+ * =======================*/
+const statusMap: Record<WorkStatus, { color: string; text: string }> = {
+  "ทำงานอยู่": { color: "success", text: "ทำงานอยู่" },
+  "ไม่ได้ทำงาน": { color: "error", text: "ไม่ได้ทำงาน" },
 };
 
 const calcAge = (birthday: string | Dayjs) => {
   if (!birthday) return "-";
   const b = dayjs(birthday);
-  if (!b.isValid()) return "-";
-  return dayjs().diff(b, "year");
+  return b.isValid() ? `${dayjs().diff(b, "year")} ปี` : "-";
 };
 
+const getAvatarColor = (seed: number) => {
+  const colors = ["#ff7a45", "#722ed1", "#fadb14", "#13c2c2", "#52c41a", "#eb2f96", "#1677ff"];
+  return colors[Math.abs(seed) % colors.length];
+};
+
+const toPayload = (formValues: Omit<Staff, 'StaffID'>) => ({
+  ...formValues,
+  Birthday: formValues.Birthday ? dayjs(formValues.Birthday).toISOString() : null,
+});
+
+/* =========================
+ * Component
+ * =======================*/
 export default function StaffManagement() {
   const [form] = Form.useForm<Staff>();
+
+  // Data states
   const [staffs, setStaffs] = useState<Staff[]>([]);
   const [genders, setGenders] = useState<Gender[]>([]);
-  const [tableLoading, setTableLoading] = useState(false);
+  const [loading, setLoading] = useState({ table: true, submit: false });
 
-  // Toolbar state
-  const [searchValue, setSearchValue] = useState("");
-  const [filterGender, setFilterGender] = useState<number | undefined>();
-  const [filterStatus, setFilterStatus] = useState<string | undefined>();
+  // Filter states
+  const [filters, setFilters] = useState({
+    query: "",
+    gender: undefined as number | undefined,
+    status: undefined as WorkStatus | undefined,
+  });
 
-  const [modalOpen, setModalOpen] = useState(false);
-  const [editing, setEditing] = useState<Staff | null>(null);
+  // Modal state
+  const [modal, setModal] = useState<{ open: boolean, data: Staff | null }>({
+    open: false,
+    data: null,
+  });
+  const isEditing = !!modal.data;
 
-  // --- Fetch ---
+  /* ---------- Fetchers ---------- */
   const fetchStaffs = async () => {
-    setTableLoading(true);
+    setLoading(prev => ({ ...prev, table: true }));
     try {
-      const res = await axios.get("http://localhost:8088/api/staffs");
-      setStaffs(res.data);
+      const { data } = await axios.get<Staff[]>(`${API_BASE}/staffs`);
+      setStaffs(data || []);
     } catch {
       message.error("โหลดข้อมูลเจ้าหน้าที่ไม่สำเร็จ");
     } finally {
-      setTableLoading(false);
+      setLoading(prev => ({ ...prev, table: false }));
     }
   };
 
   const fetchGenders = async () => {
     try {
-      const res = await axios.get("http://localhost:8088/api/genders");
-      setGenders(res.data);
+      const { data } = await axios.get<Gender[]>(`${API_BASE}/genders`);
+      setGenders(data || []);
     } catch {
       message.error("โหลดข้อมูลเพศไม่สำเร็จ");
     }
@@ -114,198 +119,177 @@ export default function StaffManagement() {
     fetchGenders();
   }, []);
 
-  // --- Derived data (อ่านง่ายด้วย useMemo) ---
-  const filtered = useMemo(() => {
-    const q = searchValue.trim().toLowerCase();
+  /* ---------- Derived Data (Memoized) ---------- */
+  const filteredStaffs: Staff[] = useMemo(() => {
+    const { query, gender, status } = filters;
+    const q = query.trim().toLowerCase();
+
+    if (!q && !gender && !status) return staffs;
+
     return staffs.filter((s) => {
-      const matchQ =
-        !q ||
-        `${s.FirstName ?? ""} ${s.LastName ?? ""}`.toLowerCase().includes(q) ||
-        (s.Email ?? "").toLowerCase().includes(q) ||
-        String(s.StaffID ?? "").includes(q);
+      const name = `${s.FirstName} ${s.LastName}`.toLowerCase();
+      const email = (s.Email ?? "").toLowerCase();
+      const idStr = String(s.StaffID);
 
-      const matchGender =
-        !filterGender ||
-        s.Gender_ID === filterGender ||
-        s.Gender?.Gender_ID === filterGender;
+      const matchQuery = !q || name.includes(q) || email.includes(q) || idStr.includes(q);
+      const matchGender = !gender || s.Gender_ID === gender;
+      const matchStatus = !status || s.Status === status;
 
-      const matchStatus = !filterStatus || s.Status === filterStatus;
-
-      return matchQ && matchGender && matchStatus;
+      return matchQuery && matchGender && matchStatus;
     });
-  }, [staffs, searchValue, filterGender, filterStatus]);
+  }, [staffs, filters]);
+  
+  const staffCounts = useMemo(() => ({
+      total: staffs.length,
+      active: staffs.filter(s => s.Status === 'ทำงานอยู่').length
+  }), [staffs]);
+
+
+  /* ---------- Handlers ---------- */
+  const handleFilterChange = (key: keyof typeof filters, value: any) => {
+    setFilters(prev => ({ ...prev, [key]: value }));
+  };
 
   const resetFilters = () => {
-    setSearchValue("");
-    setFilterGender(undefined);
-    setFilterStatus(undefined);
+    setFilters({ query: "", gender: undefined, status: undefined });
+    message.success("ล้างตัวกรองทั้งหมดแล้ว");
   };
 
-  // --- Modal handlers ---
-  const openAdd = () => {
-    form.resetFields();
-    setEditing(null);
-    setModalOpen(true);
+  const openModal = (staff: Staff | null) => {
+    setModal({ open: true, data: staff });
+    if (staff) {
+      form.setFieldsValue({
+        ...staff,
+        Birthday: staff.Birthday ? dayjs(staff.Birthday) : undefined,
+      });
+    } else {
+      form.resetFields();
+    }
   };
 
-  const openEdit = (record: Staff) => {
-    setEditing(record);
-    form.setFieldsValue({
-      ...record,
-      Birthday: dayjs(record.Birthday),
-      Gender_ID: record.Gender_ID ?? record.Gender?.Gender_ID,
-    });
-    setModalOpen(true);
+  const closeModal = () => {
+    setModal({ open: false, data: null });
   };
 
-  const handleDelete = async (id?: number) => {
+  const handleDelete = async (id: number) => {
     try {
-      await axios.delete(`http://localhost:8088/api/staffs/${id}`);
+      await axios.delete(`${API_BASE}/staffs/${id}`);
       message.success("ลบข้อมูลสำเร็จ");
-      fetchStaffs();
+      fetchStaffs(); // Refresh data
     } catch {
       message.error("ลบข้อมูลไม่สำเร็จ");
     }
   };
 
-  const onFinish = async (values: any) => {
-    const payload: Staff & { StaffID: number } = {
-      ...values,
-      Birthday: values.Birthday ? values.Birthday.toISOString() : null,
-      StaffID: editing?.StaffID || generateStaffID(),
-      Gender_ID: values.Gender_ID,
-      Email: values.Email,
-      Address: values.Address,
-      FirstName: values.FirstName,
-      LastName: values.LastName,
-      Status: values.Status,
-    };
+  const onFinish = async (values: Omit<Staff, 'StaffID'>) => {
+    setLoading(prev => ({ ...prev, submit: true }));
+    const payload = toPayload(values);
 
     try {
-      if (editing?.StaffID) {
-        await axios.put(
-          `http://localhost:8088/api/staffs/${editing.StaffID}`,
-          payload
-        );
+      if (isEditing) {
+        await axios.put(`${API_BASE}/staffs/${modal.data?.StaffID}`, payload);
         message.success("แก้ไขข้อมูลสำเร็จ");
       } else {
-        await axios.post("http://localhost:8088/api/staffs", payload);
+        await axios.post(`${API_BASE}/staffs`, payload);
         message.success("เพิ่มเจ้าหน้าที่ใหม่สำเร็จ");
       }
-      setModalOpen(false);
-      fetchStaffs();
+      closeModal();
+      fetchStaffs(); // Refresh data
     } catch {
       message.error("บันทึกข้อมูลไม่สำเร็จ");
+    } finally {
+      setLoading(prev => ({ ...prev, submit: false }));
     }
   };
 
-  // --- Table columns (อ่านง่าย + ตัดคำ + sticky header) ---
-  const columns = [
+  /* ---------- Table Columns Definition ---------- */
+  const columns: ColumnsType<Staff> = [
     {
-      title: "#",
-      key: "index",
-      width: 60,
-      align: "center" as const,
-      render: (_: any, _r: Staff, index: number) => (
-        <Text type="secondary">{index + 1}</Text>
+      title: "เจ้าหน้าที่",
+      key: "staffInfo",
+      width: 280,
+      fixed: "left",
+      render: (_, r) => (
+        <Space>
+          <Avatar style={{ backgroundColor: getAvatarColor(r.StaffID) }} size="large">
+            {r.FirstName.charAt(0)}
+          </Avatar>
+          <div>
+            <Text strong>{`${r.FirstName} ${r.LastName}`}</Text>
+            <br />
+            {r.Email && (
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                <MailOutlined style={{ marginRight: 4 }}/>{r.Email}
+              </Text>
+            )}
+          </div>
+        </Space>
       ),
     },
     {
       title: "รหัส",
       dataIndex: "StaffID",
       width: 90,
-      align: "center" as const,
-      render: (id: number) => (
-        <Tag color="blue" style={{ margin: 0, fontWeight: 600 }}>
-          {id}
-        </Tag>
-      ),
-    },
-    {
-      title: "ชื่อ - นามสกุล",
-      key: "name",
-      width: 220,
-      ellipsis: true,
-      render: (_: any, r: Staff) => (
-        <Text strong ellipsis={{ tooltip: `${r.FirstName} ${r.LastName}` }}>
-          {r.FirstName} {r.LastName}
-        </Text>
-      ),
-    },
-    {
-      title: "อายุ",
-      key: "age",
-      width: 80,
-      align: "center" as const,
-      render: (_: any, r: Staff) => <Text>{calcAge(r.Birthday)}</Text>,
-    },
-    {
-      title: "วันเกิด",
-      dataIndex: "Birthday",
-      width: 120,
-      align: "center" as const,
-      render: (d: string) => (
-        <Text>
-          <CalendarOutlined style={{ color: "#8c8c8c", marginRight: 6 }} />
-          {dayjs(d).format("DD/MM/YY")}
-        </Text>
-      ),
+      align: "center",
+      render: (id) => <Tag>#{id}</Tag>,
     },
     {
       title: "สถานะ",
       dataIndex: "Status",
       width: 120,
-      align: "center" as const,
-      render: (status: string) => <Tag color={getStatusColor(status)}>{status}</Tag>,
+      align: "center",
+      render: (status: WorkStatus) => (
+        <Tag color={statusMap[status]?.color}>{statusMap[status]?.text}</Tag>
+      ),
     },
     {
-      title: "อีเมล",
-      dataIndex: "Email",
-      width: 240,
-      ellipsis: true,
-      render: (email: string) => (
-        <Text ellipsis={{ tooltip: email || "-" }}>{email || "-"}</Text>
-      ),
+      title: "อายุ",
+      dataIndex: "Birthday",
+      width: 90,
+      align: "center",
+      responsive: ["md"],
+      render: calcAge,
+    },
+    {
+      title: "เพศ",
+      dataIndex: ["Gender", "Gender"],
+      width: 100,
+      align: "center",
+      responsive: ["sm"],
     },
     {
       title: "ที่อยู่",
       dataIndex: "Address",
-      width: 260,
       ellipsis: true,
-      render: (address: string) => (
-        <Space size={6}>
-          <EnvironmentOutlined style={{ color: "#8c8c8c" }} />
-          <Text ellipsis={{ tooltip: address || "-" }} style={{ maxWidth: 200 }}>
-            {address || "-"}
-          </Text>
-        </Space>
-      ),
+      responsive: ["lg"],
+      render: (addr) => addr || "-",
     },
     {
       title: "จัดการ",
       key: "actions",
-      width: 150,
-      fixed: "right" as const,
-      align: "center" as const,
-      render: (_: any, record: Staff) => (
-        <Space size="small" wrap>
-          <Button
-            icon={<EditOutlined />}
-            size="small"
-            type="primary"
+      width: 175,
+      align: "center",
+      fixed: "right",
+      render: (_, record) => (
+        <Space size="small">
+          <Button 
+            icon={<EditOutlined />} 
+            type="primary" 
             ghost
-            onClick={() => openEdit(record)}
+            size="small"
+            onClick={() => openModal(record)}
           >
             แก้ไข
           </Button>
           <Popconfirm
             title="ยืนยันการลบ"
-            description="แน่ใจหรือไม่ว่าจะลบเจ้าหน้าที่คนนี้?"
+            description={`คุณแน่ใจหรือไม่ว่าต้องการลบ ${record.FirstName}?`}
             onConfirm={() => handleDelete(record.StaffID)}
-            okText="ลบ"
-            cancelText="ยกเลิก"
+            okText="ลบ" 
+            cancelText="ยกเลิก" 
+            okButtonProps={{ danger: true }}
           >
-            <Button icon={<DeleteOutlined />} size="small" danger>
+            <Button icon={<DeleteOutlined />} danger size="small">
               ลบ
             </Button>
           </Popconfirm>
@@ -314,268 +298,138 @@ export default function StaffManagement() {
     },
   ];
 
-  const totalActive = useMemo(
-    () => staffs.filter((s) => s.Status === "ทำงานอยู่").length,
-    [staffs]
-  );
-
+  /* ---------- Render ---------- */
   return (
-    <div style={{ maxWidth: 1200, margin: "0 auto", padding: 20 }}>
+    <div style={LAYOUT.page}>
       {/* Header */}
-      <div style={{ marginBottom: 12 }}>
-        <Space size="small" align="center">
-          <Title level={3} style={{ margin: 0, color: "#1677ff" }}>
-            <UserOutlined style={{ marginRight: 8 }} />
-            จัดการเจ้าหน้าที่
-          </Title>
-          <Badge
-            count={staffs.length}
-            style={{ backgroundColor: "#1677ff" }}
-            title="จำนวนทั้งหมด"
-          />
-          <Badge
-            count={totalActive}
-            style={{ backgroundColor: "#52c41a" }}
-            title="ทำงานอยู่"
-          />
-        </Space>
-      </div>
+      <Row justify="space-between" align="middle" style={{ marginBottom: 16 }}>
+        <Col>
+          <Space align="center">
+            <Title level={2} style={{ margin: 0 }}><UserOutlined /> จัดการข้อมูลเจ้าหน้าที่</Title>
+            <Badge count={staffCounts.total} color="blue" title="จำนวนทั้งหมด" />
+            <Badge count={staffCounts.active} color="green" title="ทำงานอยู่" />
+          </Space>
+          <Paragraph type="secondary">แสดง, เพิ่ม, แก้ไข และลบข้อมูลของเจ้าหน้าที่ในระบบ</Paragraph>
+        </Col>
+        <Col>
+          <Button type="primary" icon={<PlusOutlined />} size="large" onClick={() => openModal(null)}>
+            เพิ่มเจ้าหน้าที่
+          </Button>
+        </Col>
+      </Row>
 
       {/* Toolbar */}
-      <Card
-        size="small"
-        style={{ marginBottom: 16 }}
-        bodyStyle={{ padding: 16 }}
-      >
-        <Row gutter={[12, 12]} align="middle">
-          <Col xs={24} md={10}>
-            <Input
-              placeholder="ค้นหา: รหัส / ชื่อ-สกุล / Email"
-              allowClear
-              size="large"
-              prefix={<SearchOutlined />}
-              value={searchValue}
-              onChange={(e) => setSearchValue(e.target.value)}
-              onPressEnter={() => {}}
-            />
+      <Card style={LAYOUT.toolbarCard}>
+        <Row gutter={[16, 16]} justify="space-between">
+          <Col xs={24} md={16}>
+            <Space wrap>
+              <Input
+                placeholder="ค้นหา ชื่อ, รหัส, อีเมล..."
+                allowClear
+                prefix={<SearchOutlined />}
+                style={{ width: 300 }}
+                value={filters.query}
+                onChange={(e) => handleFilterChange("query", e.target.value)}
+              />
+              <Select
+                allowClear placeholder="กรองตามเพศ" style={{ width: 150 }}
+                value={filters.gender}
+                onChange={(v) => handleFilterChange("gender", v)}
+                options={genders.map(g => ({ value: g.Gender_ID, label: g.Gender }))}
+              />
+              <Select
+                allowClear placeholder="กรองตามสถานะ" style={{ width: 150 }}
+                value={filters.status}
+                onChange={(v) => handleFilterChange("status", v)}
+                options={Object.entries(statusMap).map(([_, val]) => ({ value: val.text, label: val.text }))}
+              />
+            </Space>
           </Col>
-          <Col xs={24} md={5}>
-            <Select
-              allowClear
-              size="large"
-              placeholder="กรองตามเพศ"
-              style={{ width: "100%" }}
-              value={filterGender}
-              onChange={setFilterGender}
-              suffixIcon={<FilterOutlined />}
-            >
-              {genders.map((g) => (
-                <Option key={g.Gender_ID} value={g.Gender_ID}>
-                  {g.Gender}
-                </Option>
-              ))}
-            </Select>
-          </Col>
-          <Col xs={24} md={5}>
-            <Select
-              allowClear
-              size="large"
-              placeholder="กรองตามสถานะ"
-              style={{ width: "100%" }}
-              value={filterStatus}
-              onChange={setFilterStatus}
-              suffixIcon={<FilterOutlined />}
-            >
-              <Option value="ทำงานอยู่">ทำงานอยู่</Option>
-              <Option value="ไม่ได้ทำงาน">ไม่ได้ทำงาน</Option>
-            </Select>
-          </Col>
-          <Col xs={24} md={4}>
-            <Space.Compact style={{ width: "100%" }}>
-              <Button
-                icon={<ReloadOutlined />}
-                onClick={resetFilters}
-                size="large"
-              >
-                ล้างตัวกรอง
-              </Button>
-              <Button
-                type="primary"
-                icon={<PlusOutlined />}
-                onClick={openAdd}
-                size="large"
-              >
-                เพิ่ม
-              </Button>
-            </Space.Compact>
+          <Col xs={24} md={8} style={{ textAlign: 'right' }}>
+            <Space>
+              <Button icon={<ReloadOutlined />} onClick={resetFilters}>ล้างตัวกรอง</Button>
+              <Button onClick={fetchStaffs} loading={loading.table}>โหลดใหม่</Button>
+            </Space>
           </Col>
         </Row>
       </Card>
 
       {/* Table */}
-      <Card size="small" bodyStyle={{ padding: 0 }}>
-        <Table
-          rowKey={(r) => String(r.StaffID ?? Math.random())}
+      <Card bodyStyle={{ padding: 0 }}>
+        <Table<Staff>
+          rowKey="StaffID"
           columns={columns}
-          dataSource={filtered}
-          loading={tableLoading}
-          locale={{
-            emptyText: (
-              <Empty
-                image={Empty.PRESENTED_IMAGE_SIMPLE}
-                description="ไม่พบข้อมูล"
-              />
-            ),
-          }}
+          dataSource={filteredStaffs}
+          loading={loading.table}
+          locale={{ emptyText: <Empty description="ไม่พบข้อมูลเจ้าหน้าที่" /> }}
           pagination={{
-            pageSize: 10,
+            showTotal: (total, range) => `แสดง ${range[0]}-${range[1]} จาก ${total} รายการ`,
+            defaultPageSize: 10,
+            pageSizeOptions: ["10", "20", "50"],
             showSizeChanger: true,
-            showQuickJumper: true,
-            showTotal: (total, range) =>
-              `แสดง ${range[0]}-${range[1]} จาก ${total} รายการ`,
-            pageSizeOptions: ["5", "10", "20", "50"],
           }}
-          bordered
-          sticky
-          size="middle"
-          scroll={{ x: 1100, y: 520 }}
-          style={{ fontSize: 14 }}
+          scroll={LAYOUT.tableScroll}
         />
       </Card>
 
       {/* Modal */}
       <Modal
         title={
-          <div style={{ fontSize: 18, fontWeight: 700, color: "#1677ff" }}>
+          <Title level={4} style={{ margin: 0 }}>
             <UserOutlined style={{ marginRight: 8 }} />
-            {editing ? "แก้ไขข้อมูลเจ้าหน้าที่" : "เพิ่มข้อมูลเจ้าหน้าที่ใหม่"}
-          </div>
+            {isEditing ? "แก้ไขข้อมูลเจ้าหน้าที่" : "เพิ่มเจ้าหน้าที่ใหม่"}
+          </Title>
         }
-        open={modalOpen}
-        onCancel={() => {
-          setModalOpen(false);
-          form.resetFields();
-        }}
-        footer={null}
+        open={modal.open}
+        onCancel={closeModal}
         destroyOnClose
-        width={760}
+        width={720}
         centered
+        footer={[
+          <Button key="back" onClick={closeModal}>ยกเลิก</Button>,
+          <Button key="submit" type="primary" loading={loading.submit} onClick={() => form.submit()}>
+            {isEditing ? "บันทึกการแก้ไข" : "เพิ่มข้อมูล"}
+          </Button>
+        ]}
       >
-        <Form
-          form={form}
-          layout="vertical"
-          onFinish={onFinish}
-          requiredMark="optional"
-        >
-          <Divider orientation="left">ข้อมูลส่วนตัว</Divider>
+        <Form form={form} layout="vertical" onFinish={onFinish}>
           <Row gutter={16}>
             <Col xs={24} sm={12}>
-              <Form.Item
-                label="ชื่อ"
-                name="FirstName"
-                rules={[{ required: true, message: "กรุณากรอกชื่อ" }]}
-              >
-                <Input size="large" placeholder="เช่น สมชาย" />
+              <Form.Item label="ชื่อ" name="FirstName" rules={[{ required: true, message: "กรุณากรอกชื่อ" }]}>
+                <Input placeholder="เช่น สมชาย" />
               </Form.Item>
             </Col>
             <Col xs={24} sm={12}>
-              <Form.Item
-                label="นามสกุล"
-                name="LastName"
-                rules={[{ required: true, message: "กรุณากรอกนามสกุล" }]}
-              >
-                <Input size="large" placeholder="เช่น ใจดี" />
+              <Form.Item label="นามสกุล" name="LastName" rules={[{ required: true, message: "กรุณากรอกนามสกุล" }]}>
+                <Input placeholder="เช่น ใจดี" />
               </Form.Item>
             </Col>
             <Col xs={24} sm={12}>
-              <Form.Item
-                label="เพศ"
-                name="Gender_ID"
-                rules={[{ required: true, message: "กรุณาเลือกเพศ" }]}
-                tooltip="ใช้เพื่อการจัดสรรงาน/สถิติ"
-              >
-                <Select placeholder="เลือกเพศ" size="large" allowClear>
-                  {genders.map((g) => (
-                    <Option key={g.Gender_ID} value={g.Gender_ID}>
-                      {g.Gender}
-                    </Option>
-                  ))}
-                </Select>
+              <Form.Item label="เพศ" name="Gender_ID" rules={[{ required: true, message: "กรุณาเลือกเพศ" }]}>
+                <Select placeholder="เลือกเพศ" options={genders.map(g => ({ value: g.Gender_ID, label: g.Gender }))} />
               </Form.Item>
             </Col>
             <Col xs={24} sm={12}>
-              <Form.Item
-                label="วันเกิด"
-                name="Birthday"
-                rules={[{ required: true, message: "กรุณาเลือกวันเกิด" }]}
-                tooltip="ใช้คำนวณอายุโดยอัตโนมัติ"
-              >
-                <DatePicker
-                  style={{ width: "100%" }}
-                  format="DD/MM/YYYY"
-                  size="large"
-                />
+              <Form.Item label="วันเกิด" name="Birthday" rules={[{ required: true, message: "กรุณาเลือกวันเกิด" }]}>
+                <DatePicker style={{ width: "100%" }} format="DD/MM/YYYY" placeholder="เลือกวันเกิด" />
               </Form.Item>
             </Col>
-          </Row>
-
-          <Divider orientation="left">ข้อมูลการทำงาน</Divider>
-          <Row gutter={16}>
             <Col xs={24} sm={12}>
-              <Form.Item
-                label="สถานะ"
-                name="Status"
-                rules={[{ required: true, message: "กรุณาเลือกสถานะ" }]}
-              >
-                <Select size="large" placeholder="เลือกสถานะ" allowClear>
-                  <Option value="ทำงานอยู่">ทำงานอยู่</Option>
-                  <Option value="ไม่ได้ทำงาน">ไม่ได้ทำงาน</Option>
-                </Select>
+              <Form.Item label="สถานะการทำงาน" name="Status" rules={[{ required: true, message: "กรุณาเลือกสถานะ" }]}>
+                <Select placeholder="เลือกสถานะ" options={Object.entries(statusMap).map(([_, val]) => ({ value: val.text, label: val.text }))} />
               </Form.Item>
             </Col>
-          </Row>
-
-          <Divider orientation="left">ข้อมูลติดต่อ</Divider>
-          <Row gutter={16}>
-            <Col xs={24}>
-              <Form.Item label="อีเมล" name="Email">
-                <Input size="large" type="email" placeholder="name@example.com" />
+             <Col xs={24} sm={12}>
+              <Form.Item label="อีเมล" name="Email" rules={[{ type: 'email', message: 'รูปแบบอีเมลไม่ถูกต้อง' }]}>
+                <Input type="email" placeholder="name@example.com" />
               </Form.Item>
             </Col>
             <Col xs={24}>
               <Form.Item label="ที่อยู่" name="Address">
-                <Input.TextArea rows={3} size="large" placeholder="รายละเอียดที่อยู่" />
+                <Input.TextArea rows={3} placeholder="รายละเอียดที่อยู่" />
               </Form.Item>
             </Col>
           </Row>
-
-          <div
-            style={{
-              textAlign: "right",
-              borderTop: "1px solid #f0f0f0",
-              paddingTop: 16,
-            }}
-          >
-            <Space size="middle">
-              <Button
-                size="large"
-                onClick={() => {
-                  setModalOpen(false);
-                  form.resetFields();
-                }}
-              >
-                ยกเลิก
-              </Button>
-              <Button
-                type="primary"
-                htmlType="submit"
-                size="large"
-                style={{ fontWeight: 600 }}
-              >
-                {editing ? "บันทึกการแก้ไข" : "เพิ่มเจ้าหน้าที่"}
-              </Button>
-            </Space>
-          </div>
         </Form>
       </Modal>
     </div>
