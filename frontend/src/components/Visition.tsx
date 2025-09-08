@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Input,
   Button,
@@ -7,130 +7,130 @@ import {
   DatePicker,
   Typography,
   Row,
-  Space,
+  Col,
+  message,
   Table,
+  Space,
   Modal,
   Popconfirm,
   Select,
-  message,
-  Col,
   AutoComplete,
   Tag,
-  Avatar,
+  Layout,
+  theme,
 } from "antd";
-import type { ColumnsType } from 'antd/es/table';
-import {
-  SearchOutlined,
-  EditOutlined,
-  DeleteOutlined,
-  PlusOutlined,
-  UserOutlined,
-  FileTextOutlined,
-  ClockCircleOutlined,
-  CheckCircleOutlined,
-  CloseCircleOutlined,
-  ExclamationCircleOutlined,
-} from "@ant-design/icons";
+import { SearchOutlined, EditOutlined, DeleteOutlined, PlusOutlined } from "@ant-design/icons";
 import axios from "axios";
 import dayjs, { Dayjs } from "dayjs";
-import { getUser } from "../lib/auth"; // Import getUser function
+import { getUser } from "../lib/auth"; // <- ใช้ getUser() จาก auth.ts
 
-const { Title, Text } = Typography;
+const { Title } = Typography;
 const { Option } = Select;
+const { Header, Content } = Layout;
 
-// Base API URL
-const api = axios.create({
-  baseURL: "http://localhost:8088",
-});
+const API_URL = "http://localhost:8088/api";
 
 // --- Interfaces ---
-type ID = number;
+interface TimeSlot { ID: number; TimeSlot_Name: string; }
+interface Inmate { Prisoner_ID: number; FirstName: string; LastName: string; }
+interface Visitor { ID: number; FirstName: string; LastName: string; Citizen_ID: string; }
+interface Staff { StaffID: number; FirstName: string; LastName: string; }
+interface Status { Status_ID: number; Status: string; }
+interface Relationship { ID: number; Relationship_name: string; }
 
-interface Inmate {
-  Prisoner_ID: ID;
-  FirstName: string;
-  LastName: string;
-}
-
-interface Staff {
-  StaffID: ID;
-  FirstName: string;
-  LastName: string;
-}
-
-interface Status {
-  Status_ID: ID;
-  Status: string;
-}
-
-interface Petition {
-  ID: ID;
-  Detail: string;
-  Date_created: string;
+interface Visitation {
+  ID: number;
+  Visit_Date: string;
   Inmate_ID: number;
+  Visitor_ID: number;
   Staff_ID: number;
   Status_ID: number;
+  Relationship_ID: number;
+  TimeSlot_ID: number;
   Inmate?: Inmate;
+  Visitor?: Visitor;
   Staff?: Staff;
   Status?: Status;
+  Relationship?: Relationship;
+  TimeSlot?: TimeSlot;
 }
 
-interface PetitionForm {
+interface VisitationForm {
   ID?: number;
-  Detail: string;
-  Date_created: Dayjs | null;
+  Visit_Date: Dayjs | null;
+  TimeSlot_ID: number | undefined;
   Inmate_ID: number | undefined;
   Inmate_Input?: string;
-  Staff_ID: number | undefined;
-  Status_ID: number | undefined;
+  VisitorFirstName?: string;
+  VisitorLastName?: string;
+  VisitorCitizenID?: string;
+  Staff_ID: number;
+  Status_ID: number;
+  Relationship_ID: number;
 }
 
-export default function Petition() {
-  const [petitions, setPetitions] = useState<Petition[]>([]);
-  const [inmates, setInmates] = useState<Inmate[]>([]);
+export default function Visition() {
+  const { token: { colorBgContainer, borderRadiusLG } } = theme.useToken();
+
+  // อ่าน user ที่ login (จาก localStorage ตาม auth.ts)
+  const currentUser = getUser();
+  // ตาม comment ใน register.tsx backend ตั้งค่า default ญาติ เป็น rankId = 3 (ปรับถ้าของคุณต่างไป)
+  const isVisitor = currentUser?.rankId === 3;
+
+  const [visitations, setVisitations] = useState<Visitation[]>([]);
+  const [prisoners, setPrisoners] = useState<Inmate[]>([]);
   const [staffs, setStaffs] = useState<Staff[]>([]);
   const [statuses, setStatuses] = useState<Status[]>([]);
-  const [form] = Form.useForm<PetitionForm>();
+  const [relationships, setRelationships] = useState<Relationship[]>([]);
+  const [timeSlots, setTimeSlots] = useState<TimeSlot[]>([]);
+  const [form] = Form.useForm<VisitationForm>();
   const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<Visitation | null>(null);
   const [loading, setLoading] = useState(false);
-  const [editingPetition, setEditingPetition] = useState<Petition | null>(null);
   const [searchValue, setSearchValue] = useState("");
-  const [filteredPetitions, setFilteredPetitions] = useState<Petition[]>([]);
+  const [filteredVisitations, setFilteredVisitations] = useState<Visitation[]>([]);
+  const [bookedSlots, setBookedSlots] = useState<number[]>([]);
   const [inmateOptions, setInmateOptions] = useState<{ value: string; label: string; key: number }[]>([]);
 
-  // Get user role from the actual login system
-  const currentUser = getUser();
-  const userRole = currentUser?.rankId === 3 ? 'guard' : 'admin';
-
-  // --- Fetch Data ---
+  // --- Fetch data ---
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [inmateRes, staffRes, statusRes, petitionRes] = await Promise.all([
-        api.get("/api/prisoners"),
-        api.get("/api/staffs"),
-        api.get("/api/statuses"),
-        api.get("/api/petitions"),
+      const [vRes, pRes, sRes, stRes, rRes, tsRes] = await Promise.all([
+        axios.get(`${API_URL}/visitations`),
+        axios.get(`${API_URL}/prisoners`),
+        axios.get(`${API_URL}/staffs`),
+        axios.get(`${API_URL}/statuses`),
+        axios.get(`${API_URL}/relationships`),
+        axios.get(`${API_URL}/timeslots`),
       ]);
 
-      const inmateData: Inmate[] = inmateRes.data || [];
-      const staffData: Staff[] = staffRes.data || [];
-      const statusData: Status[] = statusRes.data || [];
-      const petitionData: Petition[] = petitionRes.data || [];
+      const visitData: Visitation[] = vRes.data || [];
+      const prisonerData: Inmate[] = pRes.data || [];
+      const staffData: Staff[] = sRes.data || [];
+      const statusData: Status[] = stRes.data || [];
+      const relationshipData: Relationship[] = rRes.data || [];
+      const timeSlotData: TimeSlot[] = tsRes.data || [];
 
-      const merged = petitionData.map((p) => ({
-        ...p,
-        Inmate: inmateData.find(i => i.Prisoner_ID === p.Inmate_ID),
-        Staff: staffData.find(s => s.StaffID === p.Staff_ID),
-        Status: statusData.find(st => st.Status_ID === p.Status_ID),
+      const merged = visitData.map(v => ({
+        ...v,
+        Inmate: prisonerData.find(p => p.Prisoner_ID === v.Inmate_ID),
+        Staff: staffData.find(s => s.StaffID === v.Staff_ID),
+        Status: statusData.find(st => st.Status_ID === v.Status_ID),
+        Relationship: relationshipData.find(r => r.ID === v.Relationship_ID),
+        TimeSlot: timeSlotData.find(ts => ts.ID === v.TimeSlot_ID),
       }));
 
-      setInmates(inmateData);
+      setVisitations(merged);
+      setFilteredVisitations(merged);
+      setPrisoners(prisonerData);
       setStaffs(staffData);
       setStatuses(statusData);
-      setPetitions(merged);
+      setRelationships(relationshipData);
+      setTimeSlots(timeSlotData);
     } catch (error) {
-      message.error("ไม่สามารถดึงข้อมูลได้");
+      console.error(error);
+      message.error("ไม่สามารถโหลดข้อมูลการเยี่ยมญาติได้");
     } finally {
       setLoading(false);
     }
@@ -140,121 +140,102 @@ export default function Petition() {
     fetchData();
   }, []);
 
-  // --- Filtering based on search and user role ---
+  // --- Search ---
   useEffect(() => {
-    let roleFilteredData = petitions;
-    if (userRole === 'guard') {
-      const pendingStatusId = statuses.find(s => s.Status === 'รอดำเนินการ')?.Status_ID;
-      roleFilteredData = petitions.filter(p => p.Status_ID === pendingStatusId);
-    }
-
     const lowercasedValue = searchValue.toLowerCase().trim();
-    if (!lowercasedValue) {
-      setFilteredPetitions(roleFilteredData);
+    if (lowercasedValue === "") {
+      setFilteredVisitations(visitations);
     } else {
-      const searchFilteredData = roleFilteredData.filter(item => {
-        const inmateName = `${item.Inmate?.FirstName || ''} ${item.Inmate?.LastName || ''}`.toLowerCase();
-        const staffName = `${item.Staff?.FirstName || ''} ${item.Staff?.LastName || ''}`.toLowerCase();
-        const detail = item.Detail?.toLowerCase() || '';
-        return inmateName.includes(lowercasedValue) || staffName.includes(lowercasedValue) || detail.includes(lowercasedValue);
-      });
-      setFilteredPetitions(searchFilteredData);
-    }
-  }, [searchValue, petitions, userRole, statuses]);
+      const filteredData = visitations.filter(item => {
+        const inmateName = `${item.Inmate?.FirstName} ${item.Inmate?.LastName}`.toLowerCase();
+        const visitorName = `${item.Visitor?.FirstName} ${item.Visitor?.LastName}`.toLowerCase();
+        const staffName = `${item.Staff?.FirstName} ${item.Staff?.LastName}`.toLowerCase();
 
-  // --- Tag Renderers ---
-  const getStatusTag = (statusName?: string) => {
-    switch (statusName) {
-      case 'อนุมัติ': return <Tag color="success" icon={<CheckCircleOutlined />}>อนุมัติ</Tag>;
-      case 'ปฏิเสธ': case 'ไม่อนุมัติ': return <Tag color="error" icon={<CloseCircleOutlined />}>ปฏิเสธ</Tag>;
-      case 'รอดำเนินการ': return <Tag color="processing" icon={<ClockCircleOutlined />}>รอดำเนินการ</Tag>;
-      default: return <Tag icon={<ExclamationCircleOutlined />}>{statusName || 'ไม่ระบุ'}</Tag>;
+        return (
+          inmateName.includes(lowercasedValue) ||
+          visitorName.includes(lowercasedValue) ||
+          staffName.includes(lowercasedValue)
+        );
+      });
+      setFilteredVisitations(filteredData);
+    }
+  }, [searchValue, visitations]);
+
+  // --- Handlers ---
+  const handleDateChange = (date: Dayjs | null) => {
+    if (!date) {
+      setBookedSlots([]);
+      return;
+    }
+    const dateString = date.format("YYYY-MM-DD");
+    const bookedForDate = visitations
+      .filter(v => dayjs(v.Visit_Date).format("YYYY-MM-DD") === dateString)
+      .filter(v => v.ID !== editing?.ID)
+      .map(v => v.TimeSlot_ID);
+
+    setBookedSlots(bookedForDate);
+
+    const currentSelectedSlot = form.getFieldValue("TimeSlot_ID");
+    if (bookedForDate.includes(currentSelectedSlot)) {
+      form.setFieldsValue({ TimeSlot_ID: undefined });
     }
   };
 
-  // --- Modal & Form Handlers ---
   const openAdd = () => {
-    setEditingPetition(null);
     form.resetFields();
-
-    // Set default status for guards
-    if (userRole === 'guard') {
-      const pendingStatus = statuses.find(st => st.Status === "รอดำเนินการ")?.Status_ID;
-      form.setFieldsValue({ Status_ID: pendingStatus });
+    setEditing(null);
+    setBookedSlots([]);
+    // ถ้าเป็นญาติ ให้ตั้งค่า default สถานะเป็น "รอดำเนินการ" (ถ้าต้องการ)
+    if (isVisitor) {
+      const pending = statuses.find(s => s.Status === "รอดำเนินการ");
+      if (pending) form.setFieldsValue({ Status_ID: pending.Status_ID });
     }
-
     setOpen(true);
   };
 
-  const openEdit = (record: Petition) => {
-    setEditingPetition(record);
-    const inmateText = record.Inmate ? `${record.Inmate.FirstName} ${record.Inmate.LastName}` : '';
+  const openEdit = (record: Visitation) => {
+    setEditing(record);
+    const visitDate = dayjs(record.Visit_Date);
+    const initialInmateText = record.Inmate ? `${record.Inmate.FirstName} ${record.Inmate.LastName}` : "";
     form.setFieldsValue({
       ...record,
-      Date_created: record.Date_created ? dayjs(record.Date_created) : null,
-      Inmate_Input: inmateText,
+      Visit_Date: visitDate,
+      TimeSlot_ID: record.TimeSlot_ID,
+      Inmate_ID: record.Inmate_ID,
+      Inmate_Input: initialInmateText,
+      VisitorFirstName: record.Visitor?.FirstName,
+      VisitorLastName: record.Visitor?.LastName,
+      VisitorCitizenID: record.Visitor?.Citizen_ID,
     });
+
+    const dateString = visitDate.format("YYYY-MM-DD");
+    const bookedForDate = visitations
+      .filter(v => dayjs(v.Visit_Date).format("YYYY-MM-DD") === dateString)
+      .filter(v => v.ID !== record.ID)
+      .map(v => v.TimeSlot_ID);
+    setBookedSlots(bookedForDate);
+
     setOpen(true);
   };
 
-  const onFinish = async (values: PetitionForm) => {
-    setLoading(true);
-    try {
-      const payload = {
-        ...values,
-        Date_created: values.Date_created?.toISOString(),
-      };
-      delete (payload as any).Inmate_Input;
-
-      // Force 'Pending' status if user is a guard
-      if (userRole === 'guard') {
-        const pendingStatusId = statuses.find(s => s.Status === 'รอดำเนินการ')?.Status_ID;
-        payload.Status_ID = pendingStatusId;
-      }
-
-      if (editingPetition) {
-        await api.put(`/api/petitions/${editingPetition.ID}`, payload);
-        message.success("แก้ไขคำร้องสำเร็จ");
-      } else {
-        await api.post("/api/petitions", payload);
-        message.success("เพิ่มคำร้องสำเร็จ");
-      }
-      setOpen(false);
-      fetchData();
-    } catch (error) {
-      message.error("เกิดข้อผิดพลาดในการบันทึกข้อมูล");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleDelete = async (id: number) => {
-    try {
-      await api.delete(`/api/petitions/${id}`);
-      message.success("ลบคำร้องสำเร็จ");
-      fetchData();
-    } catch (error) {
-      message.error("เกิดข้อผิดพลาดในการลบคำร้อง");
-    }
-  };
-
-  // --- Autocomplete Handlers ---
   const handleInmateSearch = (searchText: string) => {
     if (!searchText) {
       setInmateOptions([]);
     } else {
-      const filtered = inmates.filter(p =>
+      const filtered = prisoners.filter(p =>
         `${p.FirstName} ${p.LastName}`.toLowerCase().includes(searchText.toLowerCase())
       );
-      setInmateOptions(filtered.map(p => ({
-        value: `${p.FirstName} ${p.LastName}`,
-        label: `${p.FirstName} ${p.LastName}`,
-        key: p.Prisoner_ID,
-      })));
+      setInmateOptions(
+        filtered.map(p => ({
+          value: `${p.FirstName} ${p.LastName}`,
+          label: `${p.FirstName} ${p.LastName}`,
+          key: p.Prisoner_ID,
+        }))
+      );
     }
   };
 
-  const onInmateSelect = (_: string, option: { key: number }) => {
+  const onInmateSelect = (value: string, option: { key: number }) => {
     form.setFieldsValue({ Inmate_ID: option.key });
   };
 
@@ -264,162 +245,223 @@ export default function Petition() {
     }
   };
 
-  // --- Table Columns ---
-  const columns = useMemo((): ColumnsType<Petition> => {
-    const baseColumns: ColumnsType<Petition> = [
-      { title: "ลำดับ", key: "index", render: (_, __, index) => index + 1, width: 70, align: 'center' },
-      { title: "ผู้ยื่นคำร้อง", render: (record) => <Space><Avatar icon={<UserOutlined />} /><span>{record.Inmate ? `${record.Inmate.FirstName} ${record.Inmate.LastName}` : '-'}</span></Space> },
-      { title: "สถานะ", render: (record) => getStatusTag(record.Status?.Status) },
-      { title: "รายละเอียด", dataIndex: "Detail", ellipsis: true },
-      { title: "วันที่ยื่น", dataIndex: "Date_created", render: (date: string) => (date ? dayjs(date).format("DD/MM/YYYY") : '-') },
-      { title: "เจ้าหน้าที่ผู้รับเรื่อง", render: (record) => <span>{record.Staff ? `${record.Staff.FirstName} ${record.Staff.LastName}` : '-'}</span> },
-    ];
+  const onFinish = async (values: VisitationForm) => {
+    setLoading(true);
+    try {
+      const payload = {
+        Visit_Date: values.Visit_Date?.format("YYYY-MM-DD"),
+        TimeSlot_ID: values.TimeSlot_ID,
+        Inmate_ID: values.Inmate_ID,
+        Relationship_ID: values.Relationship_ID,
+        Staff_ID: values.Staff_ID,
+        Status_ID: values.Status_ID,
+        VisitorFirstName: values.VisitorFirstName,
+        VisitorLastName: values.VisitorLastName,
+        VisitorCitizenID: values.VisitorCitizenID || `AUTO-${Date.now()}`,
+      };
 
-    if (userRole === 'admin') {
-      baseColumns.push({
-        title: "การจัดการ", key: "action", render: (record) => (
-          <Space>
-            <Button type="primary" ghost icon={<EditOutlined />} size="small" onClick={() => openEdit(record)}>แก้ไข</Button>
-            <Popconfirm title="ยืนยันการลบ?" description="คุณต้องการลบคำร้องนี้ใช่หรือไม่?" onConfirm={() => handleDelete(record.ID)} okText="ยืนยัน" cancelText="ยกเลิก">
-              <Button icon={<DeleteOutlined />} size="small" danger>ลบ</Button>
-            </Popconfirm>
-          </Space>
-        )
-      });
+      // บังคับถ้าเป็นญาติแล้วพยายามส่งสถานะไม่ใช่ "รอดำเนินการ" -> เปลี่ยนกลับ
+      if (isVisitor) {
+        const pending = statuses.find(s => s.Status === "รอดำเนินการ");
+        if (pending) payload.Status_ID = pending.Status_ID;
+      }
+
+      if (editing) {
+        await axios.put(`${API_URL}/visitations/${editing.ID}`, payload);
+        message.success("แก้ไขสำเร็จ");
+      } else {
+        await axios.post(`${API_URL}/visitations`, payload);
+        message.success("เพิ่มการเยี่ยมญาติสำเร็จ");
+      }
+
+      setOpen(false);
+      form.resetFields();
+      fetchData();
+    } catch (error: any) {
+      console.error(error);
+      message.error(error.response?.data?.message || "เกิดข้อผิดพลาด");
+    } finally {
+      setLoading(false);
     }
+  };
 
-    return baseColumns;
-  }, [inmates, staffs, statuses, userRole]);
+  const handleDelete = async (id: number) => {
+    try {
+      await axios.delete(`${API_URL}/visitations/${id}`);
+      message.success("ลบสำเร็จ");
+      fetchData();
+    } catch (error) {
+      message.error("เกิดข้อผิดพลาดในการลบ");
+    }
+  };
+
+  const disabledWeekend = (current: Dayjs) => {
+    return current && (current.day() === 0 || current.day() === 6);
+  };
+
+  const getStatusTag = (statusName?: string) => {
+    switch (statusName) {
+      case "อนุมัติ": return <Tag color="green">อนุมัติ</Tag>;
+      case "ปฏิเสธ": case "ไม่อนุมัติ": return <Tag color="red">ปฏิเสธ</Tag>;
+      case "รอดำเนินการ": case "รอ...": return <Tag color="blue">รอดำเนินการ</Tag>;
+      case "สำเร็จ": return <Tag color="purple">สำเร็จ</Tag>;
+      default: return <Tag>{statusName || "ไม่ระบุ"}</Tag>;
+    }
+  };
+
+  const columns = [
+    { title: "ลำดับ", key: "index", render: (_: any, __: any, idx: number) => idx + 1, width: 70 },
+    { title: "ผู้ต้องขัง", render: (_: any, r: Visitation) => `${r.Inmate?.FirstName} ${r.Inmate?.LastName}` },
+    { title: "ผู้มาเยี่ยม", render: (_: any, r: Visitation) => `${r.Visitor?.FirstName} ${r.Visitor?.LastName}` },
+    { title: "เลขบัตรประชาชน", render: (_: any, r: Visitation) => r.Visitor?.Citizen_ID },
+    { title: "ความสัมพันธ์", dataIndex: ["Relationship", "Relationship_name"] },
+    { title: "เจ้าหน้าที่", render: (_: any, r: Visitation) => `${r.Staff?.FirstName} ${r.Staff?.LastName}` },
+    { title: "สถานะ", dataIndex: ["Status", "Status"], render: (status: string) => getStatusTag(status) },
+    { title: "วันที่เยี่ยม", dataIndex: "Visit_Date", render: (date: string) => dayjs(date).format("DD/MM/YYYY") },
+    { title: "ช่วงเวลา", dataIndex: ["TimeSlot", "TimeSlot_Name"] },
+    {
+      title: "จัดการ",
+      key: "action",
+      render: (_: any, r: Visitation) => (
+        <Space>
+          <Button type="primary" ghost icon={<EditOutlined />} size="small" onClick={() => openEdit(r)}>แก้ไข</Button>
+          <Popconfirm title="ยืนยันการลบ?" onConfirm={() => handleDelete(r.ID)} okText="ยืนยัน" cancelText="ยกเลิก">
+            <Button icon={<DeleteOutlined />} size="small" danger>ลบ</Button>
+          </Popconfirm>
+        </Space>
+      ),
+    },
+  ];
 
   return (
-    <div style={{ maxWidth: 1600, margin: "0 auto", padding: 20 }}>
-      <Title level={2} style={{ color: "#1890ff" }}><FileTextOutlined /> ระบบยื่นคำร้องทั่วไป</Title>
+    <Layout>
+      <Header style={{ padding: "0 16px", background: colorBgContainer, display: "flex", alignItems: "center", justifyContent: "space-between", borderRadius: borderRadiusLG }}>
+        <Title level={3} style={{ margin: 0 }}>ระบบจัดการการเยี่ยมญาติ</Title>
+        <Button type="primary" icon={<PlusOutlined />} onClick={openAdd}>
+          เพิ่มการเยี่ยมญาติ
+        </Button>
+      </Header>
+      <Content style={{ padding: "16px 0" }}>
+        <Card bordered={false}>
+          <Row justify="end" style={{ marginBottom: 16 }}>
+            <Col>
+              <Input
+                placeholder="ค้นหา..."
+                prefix={<SearchOutlined />}
+                allowClear
+                value={searchValue}
+                onChange={e => setSearchValue(e.target.value)}
+                style={{ width: 300 }}
+              />
+            </Col>
+          </Row>
+          <Table
+            columns={columns}
+            dataSource={filteredVisitations}
+            rowKey="ID"
+            loading={loading}
+            bordered
+          />
+        </Card>
+      </Content>
 
-      <Card style={{ marginBottom: 24 }}>
-        <Row gutter={16} align="middle">
-          <Col xs={12} md={12}>
-            <Input
-              placeholder="ค้นหาจากชื่อผู้ร้อง, เจ้าหน้าที่, รายละเอียด..."
-              prefix={<SearchOutlined />}
-              allowClear
-              value={searchValue}
-              onChange={e => setSearchValue(e.target.value)}
-            />
-          </Col>
-          <Col xs={6} md={6}>
-            {userRole === 'admin' && (
-              <Button type="primary" icon={<PlusOutlined />} onClick={openAdd} block>
-                เพิ่มคำร้อง
-              </Button>
-            )}
-          </Col>
-          <Col xs={6} md={6} style={{ textAlign: 'right' }}>
-            <Space>
-              <Text strong>บทบาท:</Text>
-              <Text>{userRole === 'admin' ? 'Admin' : 'Guard'}</Text>
-            </Space>
-          </Col>
-        </Row>
-      </Card>
-
-      <Card>
-        <Table
-          columns={columns}
-          dataSource={filteredPetitions}
-          rowKey="ID"
-          loading={loading}
-          pagination={{ pageSize: 10 }}
-        />
-      </Card>
-
-      <Modal
-        title={editingPetition ? "แก้ไขคำร้อง" : "เพิ่มคำร้องใหม่"}
-        open={open}
-        onCancel={() => {
-          setOpen(false);
-          form.resetFields();
-          setEditingPetition(null);
-        }}
-        footer={null}
-        destroyOnClose
-        width={800}
-      >
-        <Form
-          form={form}
-          layout="vertical"
-          onFinish={onFinish}
-          initialValues={{ Status_ID: statuses.find(st => st.Status === "รอดำเนินการ")?.Status_ID }}
-        >
+      <Modal title={editing ? "แก้ไขข้อมูลการเยี่ยม" : "เพิ่มข้อมูลการเยี่ยม"} open={open} onCancel={() => setOpen(false)} footer={null} width={700}>
+        <Form form={form} layout="vertical" onFinish={onFinish} style={{ marginTop: 24 }}>
           <Row gutter={16}>
             <Col span={12}>
-              <Form.Item label="ผู้ยื่นคำร้อง" name="Inmate_Input" rules={[{ required: true, message: "กรุณาเลือกผู้ยื่นคำร้อง" }]}>
+              <Form.Item
+                label="ผู้ต้องขัง"
+                name="Inmate_Input"
+                rules={[{ required: true, message: "กรุณาพิมพ์และเลือกผู้ต้องขัง" }]}
+              >
                 <AutoComplete
                   options={inmateOptions}
                   onSearch={handleInmateSearch}
                   onSelect={onInmateSelect}
                   onChange={onInmateChange}
-                  placeholder="พิมพ์ชื่อผู้ต้องขังเพื่อค้นหา..."
+                  placeholder="พิมพ์ชื่อผู้ต้องขัง..."
                 />
               </Form.Item>
-              <Form.Item name="Inmate_ID" hidden>
-                <Input />
+              <Form.Item name="Inmate_ID" hidden><Input /></Form.Item>
+            </Col>
+
+            <Col span={8}>
+              <Form.Item label="ชื่อผู้มาเยี่ยม" name="VisitorFirstName" rules={[{ required: true, message: "กรุณากรอกชื่อ" }]}>
+                <Input placeholder="ชื่อ" />
               </Form.Item>
             </Col>
-            
+            <Col span={8}>
+              <Form.Item label="นามสกุลผู้มาเยี่ยม" name="VisitorLastName" rules={[{ required: true, message: "กรุณากรอกนามสกุล" }]}>
+                <Input placeholder="นามสกุล" />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item label="เลขบัตรประชาชน" name="VisitorCitizenID" rules={[{ required: true, message: "กรุณากรอกเลขบัตรประชาชน" }]}>
+                <Input placeholder="เลขบัตรประชาชน" />
+              </Form.Item>
+            </Col>
+
             <Col span={12}>
-              <Form.Item label="เจ้าหน้าที่ผู้รับเรื่อง" name="Staff_ID" rules={[{ required: true, message: "กรุณาเลือกเจ้าหน้าที่" }]}>
-                <Select showSearch placeholder="เลือกเจ้าหน้าที่" optionFilterProp="children">
-                  {staffs.map((s) => (
-                    <Option key={s.StaffID} value={s.StaffID}>
-                      {s.FirstName} {s.LastName}
-                    </Option>
-                  ))}
+              <Form.Item label="ความสัมพันธ์" name="Relationship_ID" rules={[{ required: true, message: "กรุณาเลือกความสัมพันธ์" }]}>
+                <Select placeholder="เลือกความสัมพันธ์">
+                  {relationships.map(r => <Option key={r.ID} value={r.ID}>{r.Relationship_name}</Option>)}
                 </Select>
               </Form.Item>
             </Col>
-            
+            <Col span={12}>
+              <Form.Item label="เจ้าหน้าที่" name="Staff_ID" rules={[{ required: true, message: "กรุณาเลือกเจ้าหน้าที่" }]}>
+                <Select showSearch filterOption={(input, option) => String(option?.children).toLowerCase().includes(input.toLowerCase())} placeholder="เลือกเจ้าหน้าที่">
+                  {staffs.map(s => <Option key={s.StaffID} value={s.StaffID}>{s.FirstName} {s.LastName}</Option>)}
+                </Select>
+              </Form.Item>
+            </Col>
+
             <Col span={24}>
-              <Form.Item label="รายละเอียดคำร้อง" name="Detail" rules={[{ required: true, message: "กรุณากรอกรายละเอียด" }]}>
-                <Input.TextArea rows={4} placeholder="ระบุรายละเอียด..." />
-              </Form.Item>
+              <Form.Item
+  label="สถานะ"
+  name="Status_ID"
+  rules={[{ required: true, message: "กรุณาเลือกสถานะ" }]}
+>
+  <Select placeholder="เลือกสถานะ">
+    {isVisitor
+      ? statuses
+          .filter(st => st.Status === "รอ...")   // <-- แก้ให้ตรงกับ DB
+          .map(st => (
+            <Option key={st.Status_ID} value={st.Status_ID}>
+              {st.Status}
+            </Option>
+          ))
+      : statuses.map(st => (
+          <Option key={st.Status_ID} value={st.Status_ID}>
+            {st.Status}
+          </Option>
+        ))}
+  </Select>
+</Form.Item>
             </Col>
 
             <Col span={12}>
-              <Form.Item label="วันที่ยื่น" name="Date_created" rules={[{ required: true, message: "กรุณาเลือกวันที่" }]}>
-                <DatePicker format="DD/MM/YYYY" style={{ width: '100%' }} />
+              <Form.Item label="วันที่เยี่ยม" name="Visit_Date" rules={[{ required: true, message: "กรุณาเลือกวันที่เยี่ยม" }]}>
+                <DatePicker style={{ width: "100%" }} format="DD/MM/YYYY" onChange={handleDateChange} disabledDate={disabledWeekend} />
               </Form.Item>
             </Col>
-
             <Col span={12}>
-              <Form.Item label="สถานะ" name="Status_ID" rules={[{ required: true, message: "กรุณาเลือกสถานะ" }]}>
-                <Select placeholder="เลือกสถานะ" disabled={userRole === 'guard'}>
-                  {userRole === 'guard'
-                    ? statuses.filter(st => st.Status === "รอดำเนินการ").map(st => (
-                        <Option key={st.Status_ID} value={st.Status_ID}>
-                          {st.Status}
-                        </Option>
-                      ))
-                    : statuses.map(st => (
-                        <Option key={st.Status_ID} value={st.Status_ID}>
-                          {st.Status}
-                        </Option>
-                      ))
-                  }
+              <Form.Item label="ช่วงเวลา" name="TimeSlot_ID" rules={[{ required: true, message: "กรุณาเลือกช่วงเวลา" }]}>
+                <Select placeholder="เลือกช่วงเวลา">
+                  {timeSlots.map(ts => <Option key={ts.ID} value={ts.ID} disabled={bookedSlots.includes(ts.ID)}>{ts.TimeSlot_Name}</Option>)}
                 </Select>
               </Form.Item>
             </Col>
           </Row>
 
-          <div style={{ textAlign: "right", marginTop: 16 }}>
-            <Button onClick={() => setOpen(false)} style={{ marginRight: 8 }}>
-              ยกเลิก
-            </Button>
-            <Button type="primary" htmlType="submit" loading={loading}>
-              บันทึกข้อมูล
-            </Button>
-          </div>
+          <Row justify="end">
+            <Space>
+              <Button onClick={() => setOpen(false)}>ยกเลิก</Button>
+              <Button type="primary" htmlType="submit" loading={loading}>บันทึก</Button>
+            </Space>
+          </Row>
         </Form>
       </Modal>
-    </div>
+    </Layout>
   );
 }
