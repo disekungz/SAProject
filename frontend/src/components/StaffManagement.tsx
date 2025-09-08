@@ -22,15 +22,15 @@ interface Gender {
   Gender: string;
 }
 interface Staff {
-  StaffID: number; 
+  StaffID: number;
   Email?: string;
   FirstName: string;
   LastName: string;
   Birthday: string | Dayjs;
   Status: WorkStatus;
   Address: string;
-  Gender_ID: number;
-  Gender?: Gender;
+  Gender_ID: number;       // ทำให้เป็น number เสมอ (normalize ตอนดึง)
+  Gender?: any | null;     // รองรับหลายรูปแบบที่ backend อาจส่งมา
 }
 
 /* =========================
@@ -40,7 +40,7 @@ const API_BASE = "http://localhost:8088/api";
 const LAYOUT = {
   page: { maxWidth: 1400, margin: "0 auto", padding: 24 },
   toolbarCard: { marginBottom: 16 },
-  tableScroll: { x: 1000 },
+  tableScroll: { x: 1200 },
 } as const;
 
 /* =========================
@@ -62,10 +62,35 @@ const getAvatarColor = (seed: number) => {
   return colors[Math.abs(seed) % colors.length];
 };
 
+// ✅ แปลงค่าใน payload ให้ชัวร์ว่าเป็นชนิดที่ backend ต้องการ
 const toPayload = (formValues: Omit<Staff, 'StaffID'>) => ({
   ...formValues,
+  Gender_ID: Number((formValues as any).Gender_ID),
   Birthday: formValues.Birthday ? dayjs(formValues.Birthday).toISOString() : null,
 });
+
+// ✅ ช่วยดึงชื่อเพศจากได้หลายรูปแบบ + fallback ด้วย lookup จาก genders
+const getGenderText = (r: Staff, genders: Gender[]) => {
+  // จากอ็อบเจ็กต์ (รองรับชื่อตัวแปรหลากหลาย)
+  const fromObj =
+    (r as any)?.Gender?.Gender ??
+    (r as any)?.gender?.Gender ??
+    (r as any)?.Gender?.gender ??
+    (r as any)?.gender?.gender ??
+    (r as any)?.GenderName ??
+    (r as any)?.genderName ??
+    (r as any)?.Gender?.Name ??
+    (r as any)?.gender?.Name;
+
+  if (typeof fromObj === "string" && fromObj.trim()) return fromObj;
+
+  // จาก lookup ด้วย Gender_ID (เทียบแบบ Number ทั้งสองฝั่ง)
+  const idNum = Number(r.Gender_ID);
+  const found = genders.find(g => Number(g.Gender_ID) === idNum);
+  if (found?.Gender) return found.Gender;
+
+  return "-";
+};
 
 /* =========================
  * Component
@@ -79,10 +104,14 @@ export default function StaffManagement() {
   const [loading, setLoading] = useState({ table: true, submit: false });
 
   // Filter states
-  const [filters, setFilters] = useState({
+  const [filters, setFilters] = useState<{
+    query: string;
+    gender: number | undefined;
+    status: WorkStatus | undefined;
+  }>({
     query: "",
-    gender: undefined as number | undefined,
-    status: undefined as WorkStatus | undefined,
+    gender: undefined,
+    status: undefined,
   });
 
   // Modal state
@@ -96,8 +125,23 @@ export default function StaffManagement() {
   const fetchStaffs = async () => {
     setLoading(prev => ({ ...prev, table: true }));
     try {
-      const { data } = await axios.get<Staff[]>(`${API_BASE}/staffs`);
-      setStaffs(data || []);
+      const { data } = await axios.get(`${API_BASE}/staffs`);
+      const list = Array.isArray(data) ? data : data?.data;
+
+      // ✅ normalize ให้ Gender_ID เป็น number และคงค่า Gender (ถ้ามี)
+      const normalized: Staff[] = (list || []).map((raw: any) => ({
+        StaffID: Number(raw.StaffID ?? raw.staff_id ?? raw.id ?? 0),
+        Email: raw.Email ?? raw.email ?? undefined,
+        FirstName: raw.FirstName ?? raw.first_name ?? raw.firstName ?? "",
+        LastName: raw.LastName ?? raw.last_name ?? raw.lastName ?? "",
+        Birthday: raw.Birthday ?? raw.birthday ?? "",
+        Status: (raw.Status ?? raw.status ?? "ทำงานอยู่") as WorkStatus,
+        Address: raw.Address ?? raw.address ?? "",
+        Gender_ID: Number(raw.Gender_ID ?? raw.gender_id ?? raw.genderId ?? raw.gender ?? 0),
+        Gender: raw.Gender ?? raw.gender ?? null,
+      }));
+
+      setStaffs(normalized);
     } catch {
       message.error("โหลดข้อมูลเจ้าหน้าที่ไม่สำเร็จ");
     } finally {
@@ -107,8 +151,13 @@ export default function StaffManagement() {
 
   const fetchGenders = async () => {
     try {
-      const { data } = await axios.get<Gender[]>(`${API_BASE}/genders`);
-      setGenders(data || []);
+      const { data } = await axios.get(`${API_BASE}/genders`);
+      const list = Array.isArray(data) ? data : data?.data;
+      const cleaned: Gender[] = (list || []).map((g: any) => ({
+        Gender_ID: Number(g.Gender_ID ?? g.gender_id ?? g.id ?? g.genderId),
+        Gender: g.Gender ?? g.gender ?? g.Name ?? g.name ?? "-",
+      }));
+      setGenders(cleaned);
     } catch {
       message.error("โหลดข้อมูลเพศไม่สำเร็จ");
     }
@@ -132,18 +181,17 @@ export default function StaffManagement() {
       const idStr = String(s.StaffID);
 
       const matchQuery = !q || name.includes(q) || email.includes(q) || idStr.includes(q);
-      const matchGender = !gender || s.Gender_ID === gender;
+      const matchGender = !gender || Number(s.Gender_ID) === Number(gender); // ✅ เทียบแบบ Number
       const matchStatus = !status || s.Status === status;
 
       return matchQuery && matchGender && matchStatus;
     });
   }, [staffs, filters]);
-  
-  const staffCounts = useMemo(() => ({
-      total: staffs.length,
-      active: staffs.filter(s => s.Status === 'ทำงานอยู่').length
-  }), [staffs]);
 
+  const staffCounts = useMemo(() => ({
+    total: staffs.length,
+    active: staffs.filter(s => s.Status === 'ทำงานอยู่').length
+  }), [staffs]);
 
   /* ---------- Handlers ---------- */
   const handleFilterChange = (key: keyof typeof filters, value: any) => {
@@ -160,8 +208,9 @@ export default function StaffManagement() {
     if (staff) {
       form.setFieldsValue({
         ...staff,
+        Gender_ID: Number(staff.Gender_ID), // ✅ ให้เป็น number เสมอ
         Birthday: staff.Birthday ? dayjs(staff.Birthday) : undefined,
-      });
+      } as any);
     } else {
       form.resetFields();
     }
@@ -212,14 +261,14 @@ export default function StaffManagement() {
       render: (_, r) => (
         <Space>
           <Avatar style={{ backgroundColor: getAvatarColor(r.StaffID) }} size="large">
-            {r.FirstName.charAt(0)}
+            {r.FirstName?.charAt(0)}
           </Avatar>
           <div>
             <Text strong>{`${r.FirstName} ${r.LastName}`}</Text>
             <br />
             {r.Email && (
               <Text type="secondary" style={{ fontSize: 12 }}>
-                <MailOutlined style={{ marginRight: 4 }}/>{r.Email}
+                <MailOutlined style={{ marginRight: 4 }}/> {r.Email}
               </Text>
             )}
           </div>
@@ -252,10 +301,11 @@ export default function StaffManagement() {
     },
     {
       title: "เพศ",
-      dataIndex: ["Gender", "Gender"],
+      key: "GenderText",
       width: 100,
       align: "center",
       responsive: ["sm"],
+      render: (_: any, r: Staff) => getGenderText(r, genders), // ✅ ใช้ฟังก์ชันรวม
     },
     {
       title: "ที่อยู่",
@@ -272,9 +322,9 @@ export default function StaffManagement() {
       fixed: "right",
       render: (_, record) => (
         <Space size="small">
-          <Button 
-            icon={<EditOutlined />} 
-            type="primary" 
+          <Button
+            icon={<EditOutlined />}
+            type="primary"
             ghost
             size="small"
             onClick={() => openModal(record)}
@@ -285,8 +335,8 @@ export default function StaffManagement() {
             title="ยืนยันการลบ"
             description={`คุณแน่ใจหรือไม่ว่าต้องการลบ ${record.FirstName}?`}
             onConfirm={() => handleDelete(record.StaffID)}
-            okText="ลบ" 
-            cancelText="ยกเลิก" 
+            okText="ลบ"
+            cancelText="ยกเลิก"
             okButtonProps={{ danger: true }}
           >
             <Button icon={<DeleteOutlined />} danger size="small">
@@ -305,11 +355,10 @@ export default function StaffManagement() {
       <Row justify="space-between" align="middle" style={{ marginBottom: 16 }}>
         <Col>
           <Space align="center">
-            <Title level={2} style={{ margin: 0 }}><UserOutlined /> จัดการข้อมูลเจ้าหน้าที่</Title>
-            <Badge count={staffCounts.total} color="blue" title="จำนวนทั้งหมด" />
-            <Badge count={staffCounts.active} color="green" title="ทำงานอยู่" />
+            <Title level={2} style={{ margin: 0 }}>
+              <UserOutlined /> จัดการข้อมูลเจ้าหน้าที่
+            </Title>
           </Space>
-          <Paragraph type="secondary">แสดง, เพิ่ม, แก้ไข และลบข้อมูลของเจ้าหน้าที่ในระบบ</Paragraph>
         </Col>
         <Col>
           <Button type="primary" icon={<PlusOutlined />} size="large" onClick={() => openModal(null)}>
@@ -331,17 +380,21 @@ export default function StaffManagement() {
                 value={filters.query}
                 onChange={(e) => handleFilterChange("query", e.target.value)}
               />
-              <Select
-                allowClear placeholder="กรองตามเพศ" style={{ width: 150 }}
+              <Select<number>
+                allowClear
+                placeholder="กรองตามเพศ"
+                style={{ width: 150 }}
                 value={filters.gender}
                 onChange={(v) => handleFilterChange("gender", v)}
                 options={genders.map(g => ({ value: g.Gender_ID, label: g.Gender }))}
               />
-              <Select
-                allowClear placeholder="กรองตามสถานะ" style={{ width: 150 }}
+              <Select<WorkStatus>
+                allowClear
+                placeholder="กรองตามสถานะ"
+                style={{ width: 150 }}
                 value={filters.status}
                 onChange={(v) => handleFilterChange("status", v)}
-                options={Object.entries(statusMap).map(([_, val]) => ({ value: val.text, label: val.text }))}
+                options={Object.entries(statusMap).map(([_, val]) => ({ value: val.text as WorkStatus, label: val.text }))}
               />
             </Space>
           </Col>
@@ -406,7 +459,10 @@ export default function StaffManagement() {
             </Col>
             <Col xs={24} sm={12}>
               <Form.Item label="เพศ" name="Gender_ID" rules={[{ required: true, message: "กรุณาเลือกเพศ" }]}>
-                <Select placeholder="เลือกเพศ" options={genders.map(g => ({ value: g.Gender_ID, label: g.Gender }))} />
+                <Select<number>
+                  placeholder="เลือกเพศ"
+                  options={genders.map(g => ({ value: g.Gender_ID, label: g.Gender }))}
+                />
               </Form.Item>
             </Col>
             <Col xs={24} sm={12}>
@@ -416,10 +472,13 @@ export default function StaffManagement() {
             </Col>
             <Col xs={24} sm={12}>
               <Form.Item label="สถานะการทำงาน" name="Status" rules={[{ required: true, message: "กรุณาเลือกสถานะ" }]}>
-                <Select placeholder="เลือกสถานะ" options={Object.entries(statusMap).map(([_, val]) => ({ value: val.text, label: val.text }))} />
+                <Select<WorkStatus>
+                  placeholder="เลือกสถานะ"
+                  options={Object.entries(statusMap).map(([_, val]) => ({ value: val.text as WorkStatus, label: val.text }))}
+                />
               </Form.Item>
             </Col>
-             <Col xs={24} sm={12}>
+            <Col xs={24} sm={12}>
               <Form.Item label="อีเมล" name="Email" rules={[{ type: 'email', message: 'รูปแบบอีเมลไม่ถูกต้อง' }]}>
                 <Input type="email" placeholder="name@example.com" />
               </Form.Item>

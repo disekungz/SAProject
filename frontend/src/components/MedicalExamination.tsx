@@ -393,7 +393,7 @@ export default function PrisonerMedicalExam() {
 
   return (
     <div style={{ maxWidth: 1600, margin: "0 auto", padding: 20 }}>
-      <Title level={2} style={{ color: "#1890ff" }}>
+      <Title level={2}>
         <MedicineBoxOutlined /> บันทึกการตรวจ/รักษาผู้ต้องขัง
       </Title>
 
