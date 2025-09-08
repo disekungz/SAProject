@@ -20,12 +20,12 @@ const { RangePicker } = DatePicker;
 const { Option } = Select;
 const { TextArea } = Input;
 
-// ✅ ใช้รูปแบบเดียวกับ BehaviorEvaluation.tsx
 const BASE = "http://localhost:8088/api";
 
 // ---------- Types ----------
 interface PrisonerRecord {
   Prisoner_ID: number;
+  Inmate_ID: string; // ✅ FIX: เพิ่ม Inmate_ID
   FirstName: string;
   LastName: string;
 }
@@ -73,6 +73,7 @@ interface ActivityFormValues {
 // ---------- Mappers ----------
 const mapPrisoner = (p: any): PrisonerRecord => ({
   Prisoner_ID: p.Prisoner_ID ?? p.prisonerId ?? p.id,
+  Inmate_ID: p.Inmate_ID ?? p.inmateId ?? "", // ✅ FIX: Map ข้อมูล Inmate_ID
   FirstName: p.FirstName ?? p.firstName ?? "",
   LastName: p.LastName ?? p.lastName ?? "",
 });
@@ -121,7 +122,7 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
   const [form] = Form.useForm<ActivityFormValues>();
   const [participantForm] = Form.useForm();
   const [withdrawalForm] = Form.useForm();
-
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
   const [data, setData] = useState<ActivityRecord[]>([]);
   const [filtered, setFiltered] = useState<ActivityRecord[]>([]);
   const [prisoners, setPrisoners] = useState<PrisonerRecord[]>([]);
@@ -135,7 +136,7 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
   const [withdrawalModalOpen, setWithdrawalModalOpen] = useState(false);
   const [currentEnrollment, setCurrentEnrollment] = useState<EnrollmentRecord | null>(null);
 
-  // ---------- API (axios แบบเดียวกับ BehaviorEvaluation) ----------
+  // ---------- API ----------
   const fetchSchedules = async () => {
     try {
       const res = await axios.get(`${BASE}/schedules`);
@@ -207,7 +208,7 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
     form.setFieldsValue({
       activityName: record.activity.activityName,
       description: record.activity.description,
-      instructorId: record.member.MID, // ✅ MID
+      instructorId: record.member.MID,
       room: record.activity.location,
       maxParticipants: record.max,
       dateRange: [
@@ -358,7 +359,9 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
     }
   };
 
-  const actionMenuItems = (record: ActivityRecord): MenuProps["items"] => [
+  // src/ActivityAndVocationalTrainingSchedule.tsx
+
+const actionMenuItems = (record: ActivityRecord): MenuProps["items"] => [
     {
       key: "edit",
       icon: <EditOutlined />,
@@ -369,16 +372,9 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
       key: "delete",
       icon: <DeleteOutlined />,
       danger: true,
-      label: (
-        <Popconfirm
-          title="แน่ใจหรือไม่ว่าจะลบ?"
-          onConfirm={() => handleDelete(record.schedule_ID)}
-          okText="ลบ"
-          cancelText="ยกเลิก"
-        >
-          ลบ
-        </Popconfirm>
-      ),
+      label: "ลบ",
+      // เมื่อคลิก "ลบ" ให้ตั้งค่า ID ที่ต้องการยืนยันการลบ
+      onClick: () => setConfirmDeleteId(record.schedule_ID),
     },
   ];
 
@@ -428,14 +424,32 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
       key: "actions",
       fixed: "right" as const,
       width: 150,
+      // ✅ STEP 2.2: แก้ไข render function ทั้งหมด
       render: (_: any, record: ActivityRecord) => (
         <Space>
           <Button icon={<EyeOutlined />} onClick={() => openParticipantModal(record)}>
             ดูรายชื่อ
           </Button>
-          <Dropdown menu={{ items: actionMenuItems(record) }} trigger={["click"]}>
-            <Button icon={<MoreOutlined />} />
-          </Dropdown>
+          
+          {/* Popconfirm จะมาครอบ Dropdown ที่นี่ */}
+          <Popconfirm
+            title="แน่ใจหรือไม่ว่าจะลบ?"
+            // แสดง Popconfirm นี้เมื่อ confirmDeleteId ตรงกับ ID ของแถวนี้
+            open={confirmDeleteId === record.schedule_ID} 
+            onConfirm={() => {
+              handleDelete(record.schedule_ID);
+              setConfirmDeleteId(null); // ซ่อน Popconfirm หลังกดยืนยัน
+            }}
+            onCancel={() => setConfirmDeleteId(null)} // ซ่อน Popconfirm หลังกดยกเลิก
+            okText="ลบ"
+            cancelText="ยกเลิก"
+            okButtonProps={{ loading: loading }}
+          >
+            {/* Dropdown อยู่ข้างใน Popconfirm */}
+            <Dropdown menu={{ items: actionMenuItems(record) }} trigger={["click"]}>
+              <Button icon={<MoreOutlined />} />
+            </Dropdown>
+          </Popconfirm>
         </Space>
       ),
     },
@@ -443,7 +457,8 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
 
   const participantColumns = [
     { title: "ลำดับ", render: (_: any, __: any, idx: number) => idx + 1, width: 70 },
-    { title: "รหัสผู้ต้องขัง", dataIndex: ["prisoner", "Prisoner_ID"] },
+    // ✅ FIX: เปลี่ยน DataIndex เป็น Inmate_ID
+    { title: "รหัสผู้ต้องขัง", dataIndex: ["prisoner", "Inmate_ID"] },
     {
       title: "ชื่อ-นามสกุล",
       render: (_: any, r: EnrollmentRecord) =>
@@ -601,8 +616,9 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
               optionFilterProp="children"
             >
               {prisoners.map((p) => (
+                // ✅ FIX: เปลี่ยนการแสดงผลเป็น Inmate_ID แต่ยังส่ง Prisoner_ID เป็น value
                 <Option key={p.Prisoner_ID} value={p.Prisoner_ID}>
-                  {p.Prisoner_ID} - {p.FirstName} {p.LastName}
+                  {p.Inmate_ID} - {p.FirstName} {p.LastName}
                 </Option>
               ))}
             </Select>
