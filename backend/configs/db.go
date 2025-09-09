@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/sa-project/entity"
+	"golang.org/x/crypto/bcrypt"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -71,7 +72,21 @@ func SetupDatabase() {
 	db.FirstOrCreate(&entity.Operator{OperatorID: 3, OperatorName: "แก้ไข"})
 	db.FirstOrCreate(&entity.Operator{OperatorID: 4, OperatorName: "เพิ่มใหม่"})
 
-	db.FirstOrCreate(&entity.Member{MID: 1, FirstName: "สมมติ", LastName: "สมาชิก"})
+	password := "123456"
+	hashedPassword, _ := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+
+	member := entity.Member{
+		MID:       1,
+		Username:  "admin01",
+		Password:  string(hashedPassword),
+		Email:     "admin01@example.com",
+		RankID:    1, // ให้สิทธิ์เป็นแอดมิน
+		FirstName: "สมชาย",
+		LastName:  "ใจดี",
+		Birthday:  time.Date(1995, time.March, 15, 0, 0, 0, 0, time.Local),
+	}
+
+	db.Where(entity.Member{Username: member.Username}).FirstOrCreate(&member)
 
 	db.FirstOrCreate(&entity.Work{Work_ID: 1, Work_Name: "ซ่อมบำรุง"})
 	db.FirstOrCreate(&entity.Work{Work_ID: 2, Work_Name: "ทำสวน"})
