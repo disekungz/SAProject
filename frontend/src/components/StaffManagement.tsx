@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import {
   Input, Button, Card, Form, DatePicker, Row, Col, Typography, message,
-  Select, Table, Space, Modal, Popconfirm, Tag, Empty, Badge, Avatar,
+  Select, Table, Space, Modal, Popconfirm, Tag, Empty, Avatar,
 } from "antd";
 import {
   SearchOutlined, EditOutlined, DeleteOutlined, PlusOutlined, UserOutlined,
@@ -11,7 +11,7 @@ import axios from "axios";
 import dayjs, { Dayjs } from "dayjs";
 import type { ColumnsType } from "antd/es/table";
 
-const { Title, Text, Paragraph } = Typography;
+const { Title, Text } = Typography;
 
 /* =========================
  * Types
@@ -29,8 +29,8 @@ interface Staff {
   Birthday: string | Dayjs;
   Status: WorkStatus;
   Address: string;
-  Gender_ID: number;       // ทำให้เป็น number เสมอ (normalize ตอนดึง)
-  Gender?: any | null;     // รองรับหลายรูปแบบที่ backend อาจส่งมา
+  Gender_ID: number;      // ทำให้เป็น number เสมอ (normalize ตอนดึง)
+  Gender?: any | null;    // รองรับหลายรูปแบบที่ backend อาจส่งมา
 }
 
 /* =========================
@@ -46,6 +46,19 @@ const LAYOUT = {
 /* =========================
  * Utils
  * =======================*/
+// ✅ สร้างเลข 3 หลักระหว่าง 100-999
+const generateRandomStaffID = () => Math.floor(100 + Math.random() * 900);
+
+// ✅ สุ่มจนไม่ซ้ำกับที่มีอยู่ในตาราง (กันชนเบื้องต้น)
+const generateUnique3DigitID = (existing: number[]) => {
+  const used = new Set(existing);
+  for (let i = 0; i < 200; i++) {
+    const id = generateRandomStaffID();
+    if (!used.has(id)) return id;
+  }
+  return generateRandomStaffID();
+};
+
 const statusMap: Record<WorkStatus, { color: string; text: string }> = {
   "ทำงานอยู่": { color: "success", text: "ทำงานอยู่" },
   "ไม่ได้ทำงาน": { color: "error", text: "ไม่ได้ทำงาน" },
@@ -62,16 +75,15 @@ const getAvatarColor = (seed: number) => {
   return colors[Math.abs(seed) % colors.length];
 };
 
-// ✅ แปลงค่าใน payload ให้ชัวร์ว่าเป็นชนิดที่ backend ต้องการ
+// ✅ แปลงค่าใน payload ให้ตรงชนิด
 const toPayload = (formValues: Omit<Staff, 'StaffID'>) => ({
   ...formValues,
   Gender_ID: Number((formValues as any).Gender_ID),
   Birthday: formValues.Birthday ? dayjs(formValues.Birthday).toISOString() : null,
 });
 
-// ✅ ช่วยดึงชื่อเพศจากได้หลายรูปแบบ + fallback ด้วย lookup จาก genders
+// ✅ ดึงชื่อเพศได้หลายรูปแบบ + fallback ด้วย lookup จาก genders
 const getGenderText = (r: Staff, genders: Gender[]) => {
-  // จากอ็อบเจ็กต์ (รองรับชื่อตัวแปรหลากหลาย)
   const fromObj =
     (r as any)?.Gender?.Gender ??
     (r as any)?.gender?.Gender ??
@@ -84,7 +96,6 @@ const getGenderText = (r: Staff, genders: Gender[]) => {
 
   if (typeof fromObj === "string" && fromObj.trim()) return fromObj;
 
-  // จาก lookup ด้วย Gender_ID (เทียบแบบ Number ทั้งสองฝั่ง)
   const idNum = Number(r.Gender_ID);
   const found = genders.find(g => Number(g.Gender_ID) === idNum);
   if (found?.Gender) return found.Gender;
@@ -128,7 +139,6 @@ export default function StaffManagement() {
       const { data } = await axios.get(`${API_BASE}/staffs`);
       const list = Array.isArray(data) ? data : data?.data;
 
-      // ✅ normalize ให้ Gender_ID เป็น number และคงค่า Gender (ถ้ามี)
       const normalized: Staff[] = (list || []).map((raw: any) => ({
         StaffID: Number(raw.StaffID ?? raw.staff_id ?? raw.id ?? 0),
         Email: raw.Email ?? raw.email ?? undefined,
@@ -181,17 +191,12 @@ export default function StaffManagement() {
       const idStr = String(s.StaffID);
 
       const matchQuery = !q || name.includes(q) || email.includes(q) || idStr.includes(q);
-      const matchGender = !gender || Number(s.Gender_ID) === Number(gender); // ✅ เทียบแบบ Number
+      const matchGender = !gender || Number(s.Gender_ID) === Number(gender);
       const matchStatus = !status || s.Status === status;
 
       return matchQuery && matchGender && matchStatus;
     });
   }, [staffs, filters]);
-
-  const staffCounts = useMemo(() => ({
-    total: staffs.length,
-    active: staffs.filter(s => s.Status === 'ทำงานอยู่').length
-  }), [staffs]);
 
   /* ---------- Handlers ---------- */
   const handleFilterChange = (key: keyof typeof filters, value: any) => {
@@ -208,7 +213,7 @@ export default function StaffManagement() {
     if (staff) {
       form.setFieldsValue({
         ...staff,
-        Gender_ID: Number(staff.Gender_ID), // ✅ ให้เป็น number เสมอ
+        Gender_ID: Number(staff.Gender_ID),
         Birthday: staff.Birthday ? dayjs(staff.Birthday) : undefined,
       } as any);
     } else {
@@ -224,7 +229,7 @@ export default function StaffManagement() {
     try {
       await axios.delete(`${API_BASE}/staffs/${id}`);
       message.success("ลบข้อมูลสำเร็จ");
-      fetchStaffs(); // Refresh data
+      fetchStaffs();
     } catch {
       message.error("ลบข้อมูลไม่สำเร็จ");
     }
@@ -232,20 +237,27 @@ export default function StaffManagement() {
 
   const onFinish = async (values: Omit<Staff, 'StaffID'>) => {
     setLoading(prev => ({ ...prev, submit: true }));
-    const payload = toPayload(values);
 
     try {
       if (isEditing) {
+        const payload = toPayload(values);
         await axios.put(`${API_BASE}/staffs/${modal.data?.StaffID}`, payload);
         message.success("แก้ไขข้อมูลสำเร็จ");
       } else {
-        await axios.post(`${API_BASE}/staffs`, payload);
+        const basePayload = toPayload(values);
+        const finalPayload = {
+          ...basePayload,
+          StaffID: generateUnique3DigitID(staffs.map(s => s.StaffID)), // ✅ 3 หลัก & กันซ้ำหน้าบ้าน
+        };
+
+        await axios.post(`${API_BASE}/staffs`, finalPayload);
         message.success("เพิ่มเจ้าหน้าที่ใหม่สำเร็จ");
       }
       closeModal();
-      fetchStaffs(); // Refresh data
-    } catch {
-      message.error("บันทึกข้อมูลไม่สำเร็จ");
+      fetchStaffs();
+    } catch (e: any) {
+      const msg = e?.response?.data?.error ?? "บันทึกข้อมูลไม่สำเร็จ";
+      message.error(msg);
     } finally {
       setLoading(prev => ({ ...prev, submit: false }));
     }
@@ -305,7 +317,7 @@ export default function StaffManagement() {
       width: 100,
       align: "center",
       responsive: ["sm"],
-      render: (_: any, r: Staff) => getGenderText(r, genders), // ✅ ใช้ฟังก์ชันรวม
+      render: (_: any, r: Staff) => getGenderText(r, genders),
     },
     {
       title: "ที่อยู่",
