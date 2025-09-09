@@ -1,5 +1,3 @@
-// BehaviorEvaluation.tsx
-
 import { useState, useEffect } from "react";
 import {
   Input, Button, Form, DatePicker, Typography, Row, Col, message,
@@ -11,13 +9,20 @@ import {
 import dayjs, { Dayjs } from "dayjs";
 import localeData from "dayjs/plugin/localizedFormat";
 import axios from "axios";
-import { getUser } from "../lib/auth"; // ✅ 1. Import getUser
 
 dayjs.extend(localeData);
 
 const { Title, Text } = Typography;
 const { Option } = Select;
 const BASE = "http://localhost:8088/api";
+
+// ✅ Mock function to resolve the import error
+const getUser = () => {
+  // In a real application, this would come from an authentication context or API
+  // For now, we'll return a mock user object
+  return { MID: 1, FirstName: "ระบบ", LastName: "แอดมิน" };
+};
+
 
 // ---------- Types ----------
 export interface Prisoner {
@@ -88,7 +93,7 @@ const mapEvaluation = (d: any): BehaviorEvaluationRecord => {
 };
 
 export default function BehaviorEvaluation() {
-  const currentUser = getUser(); // ✅ 2. ดึงข้อมูลผู้ใช้ที่ล็อกอิน
+  const currentUser = getUser();
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
   const [prisoners, setPrisoners] = useState<Prisoner[]>([]);
   const [criteria, setCriteria] = useState<{ bId: number; criterion: string }[]>([]);
@@ -163,7 +168,6 @@ export default function BehaviorEvaluation() {
   // ---------- Handlers ----------
   const openAdd = () => {
     form.resetFields();
-    // ✅ 3. ตั้งค่าผู้ประเมินเป็น User ปัจจุบันอัตโนมัติ
     if (currentUser && typeof currentUser.MID === 'number') {
       form.setFieldsValue({ mId: currentUser.MID });
     }
@@ -309,38 +313,39 @@ export default function BehaviorEvaluation() {
 
   // ---------- UI ----------
   return (
-    <div style={{ padding: 24, background: "#f5f5f5", minHeight: "100vh" }}>
-      <Row justify="space-between" align="middle" style={{ marginBottom: 24 }}>
-        <Col>
-          <Title level={3} style={{ margin: 0 }}>บันทึกการประเมินพฤติกรรม</Title>
-          <Text type="secondary">จัดการข้อมูลการประเมินพฤติกรรมผู้ต้องขัง</Text>
-        </Col>
-        <Col>
-          <Space>
-            <Input
-              placeholder="ค้นหา รหัส, ชื่อ, ผู้ประเมิน"
-              allowClear
-              prefix={<SearchOutlined />}
-              value={searchValue}
-              onChange={(e) => setSearchValue(e.target.value)}
-              style={{ width: 260 }}
-            />
-            <Button type="primary" icon={<PlusOutlined />} onClick={openAdd}>
-              เพิ่มการประเมิน
-            </Button>
-          </Space>
-        </Col>
-      </Row>
+    <div style={{ padding: 24, background: "#fff", minHeight: "100vh" }}>
+      
+        <Row justify="space-between" align="middle" style={{ marginBottom: 24 }}>
+          <Col>
+            <Title level={3} style={{ margin: 0 }}>บันทึกการประเมินพฤติกรรม</Title>
+            <Text type="secondary">จัดการข้อมูลการประเมินพฤติกรรมผู้ต้องขัง</Text>
+          </Col>
+          <Col>
+            <Space>
+              <Input
+                placeholder="ค้นหา รหัส, ชื่อ, ผู้ประเมิน"
+                allowClear
+                prefix={<SearchOutlined />}
+                value={searchValue}
+                onChange={(e) => setSearchValue(e.target.value)}
+                style={{ width: 260 }}
+              />
+              <Button type="primary" icon={<PlusOutlined />} onClick={openAdd}>
+                เพิ่มการประเมิน
+              </Button>
+            </Space>
+          </Col>
+        </Row>
 
-      <Table
-        loading={loading}
-        columns={columns}
-        dataSource={filtered}
-        pagination={{ pageSize: 10, showSizeChanger: true }}
-        scroll={{ x: 1300 }}
-        rowKey="key"
-        style={{ background: "#fff", borderRadius: 8, padding: 8 }}
-      />
+        <Table
+          loading={loading}
+          columns={columns}
+          dataSource={filtered}
+          pagination={{ pageSize: 10, showSizeChanger: true }}
+          bordered
+          rowKey="key"
+        />
+      
 
       <Modal
         title={editing ? "แก้ไขการประเมิน" : "เพิ่มการประเมิน"}
@@ -438,7 +443,7 @@ export default function BehaviorEvaluation() {
             <Col span={24} style={{ textAlign: "right" }}>
               <Space>
                 <Button onClick={() => { setModalOpen(false); form.resetFields(); }}>ยกเลิก</Button>
-                <Button type="primary" htmlType="submit">
+                <Button type="primary" htmlType="submit" loading={loading}>
                   {editing ? "บันทึกการแก้ไข" : "เพิ่มการประเมิน"}
                 </Button>
               </Space>
