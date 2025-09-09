@@ -33,14 +33,19 @@ type PrisonerInput struct {
 // อัปเดตสถานะห้องจากจำนวนผู้ต้องขังที่ยังไม่ปล่อยตัว
 func updateRoomStatus(tx *gorm.DB, roomID uint) error {
 	var count int64
+	
+	// --- LOGIC ที่แก้ไข ---
+	// นับจำนวนนักโทษที่ยัง "คุมขังอยู่" จริงๆ
+	// เงื่อนไข: release_date เป็น NULL หรือ release_date เป็นวันในอนาคต
+	now := time.Now()
 	if err := tx.Model(&entity.Prisoner{}).
-		Where("room_id = ? AND release_date IS NULL", roomID).
+		Where("room_id = ? AND (release_date IS NULL OR release_date > ?)", roomID, now).
 		Count(&count).Error; err != nil {
 		return fmt.Errorf("failed to count prisoners in room: %w", err)
 	}
 
 	newStatus := "ว่าง"
-	if count >= 2 { // ปรับตาม business rule ของคุณ
+	if count >= 2 { // ความจุห้องคือ 2 คน
 		newStatus = "เต็ม"
 	}
 
@@ -99,11 +104,13 @@ func CreatePrisoner(c *gin.Context) {
 		}
 	}
 
-	// เช็คห้องเต็มหรือยัง (เฉพาะผู้ต้องขังที่ยังไม่ถูกปล่อย)
+	// --- LOGIC ที่แก้ไข ---
+	// เช็คห้องเต็มหรือยัง (ด้วยเงื่อนไขใหม่)
 	if input.Room_ID != nil {
 		var count int64
+		now := time.Now()
 		configs.DB().Model(&entity.Prisoner{}).
-			Where("room_id = ? AND release_date IS NULL", *input.Room_ID).
+			Where("room_id = ? AND (release_date IS NULL OR release_date > ?)", *input.Room_ID, now).
 			Count(&count)
 		if count >= 2 {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "ไม่สามารถเพิ่มนักโทษได้ เนื่องจากห้องขังเต็มแล้ว"})
@@ -214,12 +221,14 @@ func UpdatePrisoner(c *gin.Context) {
 		}
 	}
 
-	// เช็คห้องใหม่เต็มหรือยัง (ถ้าย้ายห้อง)
+	// --- LOGIC ที่แก้ไข ---
+	// เช็คห้องใหม่เต็มหรือยัง (ถ้าย้ายห้อง) ด้วยเงื่อนไขใหม่
 	newRoomID := input.Room_ID
 	if newRoomID != nil && (oldRoomID == nil || *oldRoomID != *newRoomID) {
 		var count int64
+		now := time.Now()
 		configs.DB().Model(&entity.Prisoner{}).
-			Where("room_id = ? AND release_date IS NULL", *newRoomID).
+			Where("room_id = ? AND (release_date IS NULL OR release_date > ?)", *newRoomID, now).
 			Count(&count)
 		if count >= 2 {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "ไม่สามารถย้ายนักโทษได้ เนื่องจากห้องขังปลายทางเต็มแล้ว"})
@@ -272,8 +281,9 @@ func UpdatePrisoner(c *gin.Context) {
 		return
 	}
 
-	// อัปเดตสถานะห้องเก่า/ใหม่ ถ้ามีการย้าย
+	// อัปเดตสถานะห้องเก่า/ใหม่ ถ้ามีการย้าย หรือมีการเปลี่ยนแปลง release_date
 	if oldRoomID != nil && (newRoomID == nil || *oldRoomID != *newRoomID) {
+		// ย้ายออกจากห้องเก่า -> อัปเดตห้องเก่า
 		if err := updateRoomStatus(tx, *oldRoomID); err != nil {
 			tx.Rollback()
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update old room status: " + err.Error()})
@@ -281,6 +291,7 @@ func UpdatePrisoner(c *gin.Context) {
 		}
 	}
 	if newRoomID != nil {
+		// ย้ายเข้าห้องใหม่ หรือข้อมูลในห้องเดิมเปลี่ยน -> อัปเดตห้องใหม่/ปัจจุบัน
 		if err := updateRoomStatus(tx, *newRoomID); err != nil {
 			tx.Rollback()
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update new room status: " + err.Error()})
