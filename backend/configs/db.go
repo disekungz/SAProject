@@ -37,7 +37,6 @@ func SetupDatabase() {
 		&entity.Adjustment{},
 		&entity.Gender{},
 		&entity.ScoreBehavior{},
-		&entity.Doctor{},
 		&entity.Type{},
 		&entity.Status{},
 		&entity.Requesting{},
@@ -63,9 +62,6 @@ func SetupDatabase() {
 	db.FirstOrCreate(&entity.Rank{RankID: 1}, entity.Rank{RankID: 1, RankName: "แอดมิน"})
 	db.FirstOrCreate(&entity.Rank{RankID: 2}, entity.Rank{RankID: 2, RankName: "ผู้คุม"})
 	db.FirstOrCreate(&entity.Rank{RankID: 3}, entity.Rank{RankID: 3, RankName: "ญาติ"})
-
-	db.FirstOrCreate(&entity.Doctor{DoctorID: 1, DoctorName: "แพทย์หญิงสมศรี"})
-	db.FirstOrCreate(&entity.Doctor{DoctorID: 2, DoctorName: "แพทย์ชายสมชาย"})
 
 	db.FirstOrCreate(&entity.Operator{OperatorID: 1, OperatorName: "เพิ่ม"})
 	db.FirstOrCreate(&entity.Operator{OperatorID: 2, OperatorName: "เบิก"})
