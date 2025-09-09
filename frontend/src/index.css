@@ -66,3 +66,16 @@ button:focus-visible {
     background-color: #f9f9f9;
   }
 }
+
+/* ล้าง margin เดิม + ยืดสูงสุด */
+html, body, #root { height: 100%; }
+body { margin: 0; }
+
+/* กัน Safari/Mac แปลก ๆ เรื่อง vh */
+html { height: -webkit-fill-available; }
+body { min-height: -webkit-fill-available; }
+
+/* เผื่อใช้ชั้นนอกใน App */
+.app-shell { min-height: 100svh; min-width: 100vw; display: flex; }
+.auth-full { position: fixed; inset: 0; } /* ใช้กับหน้า login/register */
+
