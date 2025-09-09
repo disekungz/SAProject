@@ -42,7 +42,6 @@ interface Prisoner {
   FirstName: string;
   LastName: string;
 }
-interface Doctor { DoctorID: number; DoctorName: string; }
 interface Staff { StaffID: number; FirstName: string; }
 interface Parcel { PID: number; ParcelName: string; Type_ID: number; }
 
@@ -50,15 +49,14 @@ interface MedicalHistory {
   MedicalID: number;
   Initial_symptoms: string;
   Diagnosis: string;
-  Medicine: number;
+  Medicine: number;           // อ้าง PID ของ Parcel
   MedicineAmount: number;
-  Date_Inspection: string;
+  Date_Inspection: string;    // ISO string
   Next_appointment?: string | null;
   Prisoner_ID: number;
-  DoctorID: number;
   StaffID: number;
+  Doctor: string;             // ← ใช้ string แทนความสัมพันธ์
   Prisoner?: Prisoner;
-  Doctor?: Doctor;
   Staff?: Staff;
   Parcel?: Parcel;
 }
@@ -75,16 +73,12 @@ export default function PrisonerMedicalExam() {
   const [form] = Form.useForm();
   const [medicalHistories, setMedicalHistories] = useState<MedicalHistory[]>([]);
   const [prisoners, setPrisoners] = useState<Prisoner[]>([]);
-  const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [staffs, setStaffs] = useState<Staff[]>([]);
   const [parcels, setParcels] = useState<Parcel[]>([]);
   const [filtered, setFiltered] = useState<MedicalHistory[]>([]);
   const [searchValue, setSearchValue] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
-
-  // ใช้ selected เพื่อ "ดู" รายการ (read-only)
   const [selected, setSelected] = useState<MedicalHistory | null>(null);
-
   const [loading, setLoading] = useState(false);
 
   // 👉 เก็บสถานะหน้าปัจจุบัน/ขนาดหน้า เพื่อนับลำดับต่อหน้า
@@ -94,32 +88,27 @@ export default function PrisonerMedicalExam() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [medicalRes, prisonerRes, doctorRes, staffsRes, parcelsRes] =
-        await Promise.all([
-          axios.get(`${API_URL}/medical_histories`),
-          axios.get(`${API_URL}/prisoners`),
-          axios.get(`${API_URL}/doctors`),
-          axios.get(`${API_URL}/staffs`),
-          axios.get(`${API_URL}/parcels`),
-        ]);
+      const [medicalRes, prisonerRes, staffsRes, parcelsRes] = await Promise.all([
+        axios.get(`${API_URL}/medical_histories`),
+        axios.get(`${API_URL}/prisoners`),
+        axios.get(`${API_URL}/staffs`),
+        axios.get(`${API_URL}/parcels`),
+      ]);
 
       const medicalData: MedicalHistory[] = medicalRes.data || [];
       const prisonerData: Prisoner[] = prisonerRes.data || [];
-      const doctorData: Doctor[] = doctorRes.data || [];
       const staffsData: Staff[] = staffsRes.data || [];
       const parcelsData: Parcel[] = (parcelsRes.data || []).filter((p: { Type_ID: number }) => p.Type_ID === 3);
 
-      const mergedData = medicalData.map((history) => {
+      const mergedData: MedicalHistory[] = medicalData.map((history) => {
         const prisoner = prisonerData.find((p) => p.Prisoner_ID === history.Prisoner_ID);
-        const doctor = doctorData.find((d) => d.DoctorID === history.DoctorID);
         const staff = staffsData.find((s) => s.StaffID === history.StaffID);
         const parcel = parcelsData.find((p) => p.PID === Number(history.Medicine));
-        return { ...history, Prisoner: prisoner, Doctor: doctor, Staff: staff, Parcel: parcel };
+        return { ...history, Prisoner: prisoner, Staff: staff, Parcel: parcel };
       });
 
       setMedicalHistories(mergedData);
       setPrisoners(prisonerData);
-      setDoctors(doctorData);
       setStaffs(staffsData);
       setParcels(parcelsData);
       setFiltered(mergedData);
@@ -137,18 +126,16 @@ export default function PrisonerMedicalExam() {
     if (!q) { setFiltered(medicalHistories); return; }
     const lower = q.toLowerCase();
     setFiltered(
-      medicalHistories.filter(
-        (r) =>
-          r.Prisoner?.Inmate_ID?.toLowerCase().includes(lower) ||
-          (r.Prisoner?.FirstName + " " + r.Prisoner?.LastName)?.toLowerCase().includes(lower) ||
-          r.Doctor?.DoctorName?.toLowerCase().includes(lower) ||
-          r.Staff?.FirstName?.toLowerCase().includes(lower) ||
-          r.Parcel?.ParcelName?.toLowerCase().includes(lower) ||
-          r.Initial_symptoms?.toLowerCase().includes(lower) ||
-          r.Diagnosis?.toLowerCase().includes(lower)
+      medicalHistories.filter((r) =>
+        r.Prisoner?.Inmate_ID?.toLowerCase().includes(lower) ||
+        (r.Prisoner?.FirstName + " " + r.Prisoner?.LastName)?.toLowerCase().includes(lower) ||
+        r.Doctor?.toLowerCase().includes(lower) ||                    // ← ค้นหาจากชื่อแพทย์ (string)
+        r.Staff?.FirstName?.toLowerCase().includes(lower) ||
+        r.Parcel?.ParcelName?.toLowerCase().includes(lower) ||
+        r.Initial_symptoms?.toLowerCase().includes(lower) ||
+        r.Diagnosis?.toLowerCase().includes(lower)
       )
     );
-    // รีเซ็ตไปหน้าแรกเมื่อมีการค้นหา
     setTablePagination((p) => ({ ...p, current: 1 }));
   };
 
@@ -168,18 +155,17 @@ export default function PrisonerMedicalExam() {
       Next_appointment: record.Next_appointment ? dayjs(record.Next_appointment) : null,
       Medicine: record.Medicine,
       MedicineAmount: record.MedicineAmount,
+      Doctor: record.Doctor,
     });
     setModalOpen(true);
   };
 
   const onFinish = async (values: any) => {
-    // ถ้าเป็นโหมด "ดู" ไม่ทำอะไร
     if (selected) {
       setModalOpen(false);
       return;
     }
 
-    // โหมดเพิ่มใหม่
     const basePayload = {
       ...values,
       Date_Inspection: values.Date_Inspection.toISOString(),
@@ -190,6 +176,7 @@ export default function PrisonerMedicalExam() {
       ...basePayload,
       Medicine: Number(values.Medicine),
       MedicineAmount: Number(values.MedicineAmount),
+      Doctor: String(values.Doctor || "").trim(),    // ← ส่งเป็น string
     };
 
     try {
@@ -233,47 +220,42 @@ export default function PrisonerMedicalExam() {
     if (!date) {
       return <Tag color="default">ไม่มีการนัด</Tag>;
     }
-
     const appointmentDate = dayjs(date);
     const today = dayjs();
-    const diffDays = appointmentDate.diff(today, 'day');
+    const diffDays = appointmentDate.diff(today, "day");
 
     if (diffDays < 0) {
-      // วันนัดผ่านมาแล้ว
       return (
         <div>
           <Tag color="red">เลยกำหนด</Tag>
-          <div style={{ fontSize: '12px', color: '#999' }}>
+          <div style={{ fontSize: "12px", color: "#999" }}>
             {appointmentDate.format("DD/MM/YYYY")}
           </div>
         </div>
       );
     } else if (diffDays === 0) {
-      // วันนัดวันนี้
       return (
         <div>
           <Tag color="orange">วันนี้</Tag>
-          <div style={{ fontSize: '12px', color: '#999' }}>
+          <div style={{ fontSize: "12px", color: "#999" }}>
             {appointmentDate.format("DD/MM/YYYY")}
           </div>
         </div>
       );
     } else if (diffDays <= 7) {
-      // วันนัดใกล้เข้ามา (ภายใน 7 วัน)
       return (
         <div>
           <Tag color="yellow">ใกล้ถึงกำหนด</Tag>
-          <div style={{ fontSize: '12px', color: '#999' }}>
+          <div style={{ fontSize: "12px", color: "#999" }}>
             {appointmentDate.format("DD/MM/YYYY")} (อีก {diffDays} วัน)
           </div>
         </div>
       );
     } else {
-      // วันนัดปกติ
       return (
         <div>
           <Tag color="green">นัดหมาย</Tag>
-          <div style={{ fontSize: '12px', color: '#999' }}>
+          <div style={{ fontSize: "12px", color: "#999" }}>
             {appointmentDate.format("DD/MM/YYYY")}
           </div>
         </div>
@@ -283,7 +265,6 @@ export default function PrisonerMedicalExam() {
 
   // --- Table Columns ---
   const columns = [
-    // ★ ลำดับรันนิ่งต่อหน้า
     {
       title: "ลำดับ",
       key: "seq",
@@ -306,10 +287,10 @@ export default function PrisonerMedicalExam() {
               icon={<UserOutlined />}
             />
             <div>
-              <div style={{ fontWeight: "bold", fontSize: '13px' }}>
+              <div style={{ fontWeight: "bold", fontSize: "13px" }}>
                 {prisoner.FirstName} {prisoner.LastName}
               </div>
-              <Tag color="blue" style={{ fontSize: '11px' }}>รหัส: {prisoner.Inmate_ID}</Tag>
+              <Tag color="blue" style={{ fontSize: "11px" }}>รหัส: {prisoner.Inmate_ID}</Tag>
             </div>
           </div>
         );
@@ -318,10 +299,10 @@ export default function PrisonerMedicalExam() {
     {
       title: "แพทย์ผู้ตรวจ",
       key: "doctor",
-      width: 140,
+      width: 160,
       render: (_: any, record: MedicalHistory) => (
-        <span style={{ color: "#1890ff", fontWeight: "bold", fontSize: '13px' }}>
-          <ExperimentOutlined /> {record.Doctor?.DoctorName || "-"}
+        <span style={{ color: "#1890ff", fontWeight: "bold", fontSize: "13px" }}>
+          <ExperimentOutlined /> {record.Doctor || "-"}
         </span>
       ),
     },
@@ -336,7 +317,7 @@ export default function PrisonerMedicalExam() {
       dataIndex: "Diagnosis",
       width: 150,
       render: (text: string) => (
-        <div style={{ color: "#52c41a", fontWeight: "bold", fontSize: '13px' }}>
+        <div style={{ color: "#52c41a", fontWeight: "bold", fontSize: "13px" }}>
           {text}
         </div>
       ),
@@ -358,14 +339,14 @@ export default function PrisonerMedicalExam() {
       title: "นัดครั้งถัดไป",
       key: "next_appointment",
       width: 140,
-      render: (_: any, record: MedicalHistory) => 
+      render: (_: any, record: MedicalHistory) =>
         renderNextAppointment(record.Next_appointment),
     },
     {
       title: "ผู้คุมที่บันทึก",
       width: 120,
       render: (_: any, record: MedicalHistory) => (
-        <span style={{ fontSize: '13px' }}>
+        <span style={{ fontSize: "13px" }}>
           <span style={{ marginRight: 6 }}>👮</span>{record.Staff?.FirstName || "-"}
         </span>
       ),
@@ -401,7 +382,7 @@ export default function PrisonerMedicalExam() {
         <Row gutter={16}>
           <Col xs={18}>
             <Input
-              placeholder="ค้นหา รหัสนักโทษ, ชื่อ, ยา, อาการ, การวินิจฉัย"
+              placeholder="ค้นหา รหัสนักโทษ, ชื่อ, แพทย์, ยา, อาการ, การวินิจฉัย"
               allowClear
               prefix={<SearchOutlined />}
               value={searchValue}
@@ -459,14 +440,9 @@ export default function PrisonerMedicalExam() {
             </Col>
 
             <Col span={12}>
-              <Form.Item label="แพทย์ผู้ตรวจ" name="DoctorID" rules={[{ required: !isView }]}>
-                <Select showSearch placeholder="เลือกแพทย์" optionFilterProp="label" disabled={isView}>
-                  {doctors.map((d) => (
-                    <Option key={d.DoctorID} value={d.DoctorID} label={d.DoctorName}>
-                      {d.DoctorName}
-                    </Option>
-                  ))}
-                </Select>
+              {/* เปลี่ยนเป็นช่องพิมพ์ชื่อแพทย์ */}
+              <Form.Item label="แพทย์ผู้ตรวจ" name="Doctor" rules={[{ required: !isView, message: "กรุณาระบุชื่อแพทย์" }]}>
+                <Input placeholder="ระบุชื่อแพทย์ผู้ตรวจ" disabled={isView} />
               </Form.Item>
             </Col>
 
