@@ -1,4 +1,3 @@
-// ActivityAndVocationalTrainingSchedule.tsx
 import { useState, useEffect, type FC } from "react";
 import {
   Input, Button, Form, DatePicker, Typography, Row, Col, message,
@@ -30,11 +29,12 @@ interface PrisonerRecord {
   LastName: string;
 }
 
-interface MemberRecord {
-  MID: number;
+// ✅ Changed to StaffRecord
+interface StaffRecord {
+  StaffID: number;
   FirstName: string;
   LastName: string;
-  RankID: number; // ✅ 1. เพิ่ม RankID ใน Type
+  Status: string; 
 }
 
 interface EnrollmentRecord {
@@ -52,7 +52,7 @@ interface ActivityRecord {
     location: string;
     description: string;
   };
-  member: MemberRecord;
+  staff: StaffRecord; // ✅ Changed member to staff
   startDate: Dayjs | null;
   endDate: Dayjs | null;
   startTime: string | null;
@@ -64,7 +64,7 @@ interface ActivityRecord {
 interface ActivityFormValues {
   activityName: string;
   description: string;
-  instructorId: number;
+  staffId: number; // ✅ Changed instructorId to staffId
   dateRange: [Dayjs, Dayjs];
   timeRange: [Dayjs, Dayjs];
   room: string;
@@ -79,11 +79,12 @@ const mapPrisoner = (p: any): PrisonerRecord => ({
   LastName: p.LastName ?? p.lastName ?? "",
 });
 
-const mapMember = (m: any): MemberRecord => ({
-  MID: m.MID ?? m.mId ?? m.id,
-  FirstName: m.FirstName ?? m.firstName ?? "",
-  LastName: m.LastName ?? m.lastName ?? "",
-  RankID: m.RankID ?? m.rankId ?? 0, // ✅ 2. เพิ่ม RankID ใน Mapper
+// ✅ Added mapStaff
+const mapStaff = (s: any): StaffRecord => ({
+  StaffID: s.StaffID ?? s.staffId ?? s.id,
+  FirstName: s.FirstName ?? s.firstName ?? "",
+  LastName: s.LastName ?? s.lastName ?? "",
+  Status: s.Status ?? s.status ?? "",
 });
 
 const mapEnrollment = (e: any): EnrollmentRecord => ({
@@ -95,7 +96,7 @@ const mapEnrollment = (e: any): EnrollmentRecord => ({
 
 const mapSchedule = (s: any): ActivityRecord => {
   const act = s.activity ?? s.Activity ?? {};
-  const mem = s.member ?? s.Member ?? {};
+  const stf = s.staff ?? s.Staff ?? {}; // ✅ Changed mem to stf
   const enroll = s.enrollment ?? s.Enrollment ?? [];
   const startDate = s.startDate ?? s.StartDate ?? null;
   const endDate = s.endDate ?? s.EndDate ?? null;
@@ -108,7 +109,7 @@ const mapSchedule = (s: any): ActivityRecord => {
       location: act.location ?? act.Location ?? "",
       description: act.description ?? act.Description ?? "",
     },
-    member: mapMember(mem),
+    staff: mapStaff(stf), // ✅ Use mapStaff
     startDate: startDate ? dayjs(startDate) : null,
     endDate: endDate ? dayjs(endDate) : null,
     startTime: s.startTime ?? s.StartTime ?? null,
@@ -123,11 +124,11 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
   const [form] = Form.useForm<ActivityFormValues>();
   const [participantForm] = Form.useForm();
   const [withdrawalForm] = Form.useForm();
-  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null); // ✅ Re-added state for delete confirmation
   const [data, setData] = useState<ActivityRecord[]>([]);
   const [filtered, setFiltered] = useState<ActivityRecord[]>([]);
   const [prisoners, setPrisoners] = useState<PrisonerRecord[]>([]);
-  const [members, setMembers] = useState<MemberRecord[]>([]);
+  const [staffs, setStaffs] = useState<StaffRecord[]>([]); // ✅ Changed members to staffs
   const [searchValue, setSearchValue] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<ActivityRecord | null>(null);
@@ -152,16 +153,16 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
   const loadInitialData = async () => {
     setLoading(true);
     try {
-      const [schedulesRes, prisonersRes, membersRes] = await Promise.all([
+      const [schedulesRes, prisonersRes, staffsRes] = await Promise.all([
         axios.get(`${BASE}/schedules`),
         axios.get(`${BASE}/prisoners`),
-        axios.get(`${BASE}/members`),
+        axios.get(`${BASE}/staffs`), // ✅ Fetch staffs
       ]);
       const schedules = (schedulesRes.data || []).map(mapSchedule);
       setData(schedules);
       setFiltered(schedules);
       setPrisoners((prisonersRes.data || []).map(mapPrisoner));
-      setMembers((membersRes.data || []).map(mapMember));
+      setStaffs((staffsRes.data || []).map(mapStaff)); // ✅ Set staffs
     } catch {
       message.error("ไม่สามารถโหลดข้อมูลได้");
     } finally {
@@ -182,13 +183,13 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
     setFiltered(
       data.filter((r) => {
         const activityName = r.activity?.activityName?.toLowerCase() ?? "";
-        const memberName = `${r.member?.FirstName ?? ""} ${r.member?.LastName ?? ""}`
+        const staffName = `${r.staff?.FirstName ?? ""} ${r.staff?.LastName ?? ""}` // ✅ Search by staff name
           .trim()
           .toLowerCase();
         const location = r.activity?.location?.toLowerCase() ?? "";
         return (
           activityName.includes(lower) ||
-          memberName.includes(lower) ||
+          staffName.includes(lower) ||
           location.includes(lower)
         );
       })
@@ -207,7 +208,7 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
     form.setFieldsValue({
       activityName: record.activity.activityName,
       description: record.activity.description,
-      instructorId: record.member.MID,
+      staffId: record.staff.StaffID, // ✅ Set staffId
       room: record.activity.location,
       maxParticipants: record.max,
       dateRange: [
@@ -227,7 +228,7 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
       activityName: values.activityName,
       description: values.description,
       room: values.room,
-      instructorId: values.instructorId,
+      staffId: values.staffId, // ✅ Send staffId
       maxParticipants: Number(values.maxParticipants),
       startDate: values.dateRange?.[0] ? values.dateRange[0].toISOString() : null,
       endDate: values.dateRange?.[1] ? values.dateRange[1].toISOString() : null,
@@ -355,6 +356,7 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
     }
   };
   
+  // ✅ Refactored action menu. Delete now sets state.
   const actionMenuItems = (record: ActivityRecord): MenuProps["items"] => [
     {
       key: "edit",
@@ -373,49 +375,23 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
 
   const columns = [
     { title: "ลำดับ", render: (_: any, __: any, idx: number) => <Text>{idx + 1}</Text>, width: 70 },
-    {
-      title: "ชื่อกิจกรรม",
-      dataIndex: ["activity", "activityName"],
-      width: 200,
-      render: (text: string) => <Text strong>{text || "-"}</Text>,
-    },
-    {
-      title: "วันที่",
-      dataIndex: "startDate",
-      width: 180,
-      render: (_: any, r: ActivityRecord) =>
-        r.startDate && r.endDate
-          ? `${dayjs(r.startDate).format("DD/MM/YY")} - ${dayjs(r.endDate).format("DD/MM/YY")}`
-          : "-",
-    },
-    {
-      title: "เวลา",
-      dataIndex: "startTime",
-      width: 150,
-      render: (_: any, r: ActivityRecord) =>
-        r.startTime && r.endTime
-          ? `${dayjs(r.startTime, "HH:mm:ss").format("HH:mm")} - ${dayjs(r.endTime, "HH:mm:ss").format("HH:mm")}`
-          : "-",
-    },
+    { title: "ชื่อกิจกรรม", dataIndex: ["activity", "activityName"], width: 200, render: (text: string) => <Text strong>{text || "-"}</Text> },
+    { title: "วันที่", dataIndex: "startDate", width: 180, render: (_: any, r: ActivityRecord) => r.startDate && r.endDate ? `${dayjs(r.startDate).format("DD/MM/YY")} - ${dayjs(r.endDate).format("DD/MM/YY")}` : "-" },
+    { title: "เวลา", dataIndex: "startTime", width: 150, render: (_: any, r: ActivityRecord) => r.startTime && r.endTime ? `${dayjs(r.startTime, "HH:mm:ss").format("HH:mm")} - ${dayjs(r.endTime, "HH:mm:ss").format("HH:mm")}` : "-" },
     {
       title: "วิทยากร",
-      dataIndex: ["member", "FirstName"],
-      render: (_: any, r: ActivityRecord) =>
-        `${r.member?.FirstName || ""} ${r.member?.LastName || ""}`.trim() || "-",
+      dataIndex: ["staff", "FirstName"], // ✅ Use staff data
+      render: (_: any, r: ActivityRecord) => `${r.staff?.FirstName || ""} ${r.staff?.LastName || ""}`.trim() || "-",
       width: 150,
     },
     { title: "สถานที่", dataIndex: ["activity", "location"], width: 120 },
-    {
-      title: "จำนวน",
-      width: 100,
-      render: (_: any, r: ActivityRecord) =>
-        `${(r.enrollment || []).filter((e) => e.status === 1).length} / ${r.max}`,
-    },
+    { title: "จำนวน", width: 100, render: (_: any, r: ActivityRecord) => `${(r.enrollment || []).filter((e) => e.status === 1).length} / ${r.max}` },
     {
       title: "จัดการ",
       key: "actions",
       fixed: "right" as const,
       width: 150,
+      // ✅ Changed render logic to wrap Dropdown in Popconfirm
       render: (_: any, record: ActivityRecord) => (
         <Space>
           <Button icon={<EyeOutlined />} onClick={() => openParticipantModal(record)}>
@@ -475,27 +451,16 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
 
   // ---------- UI ----------
   return (
-    <div style={{ padding: "24px", background: "#f5f5f5", minHeight: "100vh" }}>
+    <div style={{ padding: "24px", background: "#fff", minHeight: "100vh" }}>
       <Row justify="space-between" align="middle" style={{ marginBottom: 24 }}>
         <Col>
-          <Title level={3} style={{ margin: 0 }}>
-            ตารางกิจกรรมและฝึกวิชาชีพ
-          </Title>
+          <Title level={3} style={{ margin: 0 }}>ตารางกิจกรรมและฝึกวิชาชีพ</Title>
           <Text type="secondary">จัดการข้อมูลกิจกรรมทั้งหมดในระบบ</Text>
         </Col>
         <Col>
           <Space>
-            <Input
-              placeholder="ค้นหากิจกรรม, วิทยากร..."
-              prefix={<SearchOutlined />}
-              value={searchValue}
-              onChange={(e) => setSearchValue(e.target.value)}
-              style={{ width: 250 }}
-              allowClear
-            />
-            <Button type="primary" icon={<PlusOutlined />} onClick={openAdd}>
-              เพิ่มกิจกรรม
-            </Button>
+            <Input placeholder="ค้นหากิจกรรม, วิทยากร..." prefix={<SearchOutlined />} value={searchValue} onChange={(e) => setSearchValue(e.target.value)} style={{ width: 250 }} allowClear />
+            <Button type="primary" icon={<PlusOutlined />} onClick={openAdd}>เพิ่มกิจกรรม</Button>
           </Space>
         </Col>
       </Row>
@@ -505,72 +470,37 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
         columns={columns}
         dataSource={filtered}
         pagination={{ pageSize: 10, showSizeChanger: true }}
-        scroll={{ x: 1300 }}
         rowKey="schedule_ID"
         style={{ background: "#fff", borderRadius: 8, padding: 8 }}
+        bordered
       />
 
-      <Modal
-        title={editing ? "แก้ไขกิจกรรม" : "เพิ่มกิจกรรมใหม่"}
-        open={modalOpen}
-        onCancel={() => setModalOpen(false)}
-        footer={null}
-        width={900}
-        destroyOnClose
-      >
+      <Modal title={editing ? "แก้ไขกิจกรรม" : "เพิ่มกิจกรรมใหม่"} open={modalOpen} onCancel={() => setModalOpen(false)} footer={null} width={900} destroyOnClose >
         <Form form={form} layout="vertical" onFinish={onFinish} style={{ marginTop: 24 }}>
           <Row gutter={24}>
+            <Col xs={24} sm={12}><Form.Item label="ชื่อกิจกรรม" name="activityName" rules={[{ required: true }]}><Input /></Form.Item></Col>
             <Col xs={24} sm={12}>
-              <Form.Item label="ชื่อกิจกรรม" name="activityName" rules={[{ required: true }]}>
-                <Input />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={12}>
-              <Form.Item label="วิทยากร/ครูฝึก" name="instructorId" rules={[{ required: true }]}>
+              <Form.Item label="วิทยากร/ครูฝึก" name="staffId" rules={[{ required: true }]}>
                 <Select showSearch placeholder="เลือกวิทยากร" optionFilterProp="children">
-                  {members
-                    .filter(m => m.RankID === 2) // ✅ 3. กรองให้เหลือเฉพาะ RankID 2
-                    .map((m) => (
-                    <Option key={m.MID} value={m.MID}>
-                      {m.FirstName} {m.LastName}
-                    </Option>
-                  ))}
+                  {staffs
+                    .filter(s => s.Status === "ทำงานอยู่")
+                    .map((s) => (
+                      <Option key={s.StaffID} value={s.StaffID}>
+                        {s.FirstName} {s.LastName}
+                      </Option>
+                    ))}
                 </Select>
               </Form.Item>
             </Col>
-            <Col xs={24} sm={12}>
-              <Form.Item label="ช่วงวันที่" name="dateRange" rules={[{ required: true }]}>
-                <RangePicker style={{ width: "100%" }} format="DD/MM/YYYY" />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={12}>
-              <Form.Item label="ช่วงเวลา" name="timeRange" rules={[{ required: true }]}>
-                <TimePicker.RangePicker style={{ width: "100%" }} format="HH:mm" />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={12}>
-              <Form.Item label="ห้อง/สถานที่" name="room" rules={[{ required: true }]}>
-                <Input />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={12}>
-              <Form.Item
-                label="จำนวนผู้เข้าร่วมสูงสุด"
-                name="maxParticipants"
-                rules={[{ required: true }]}
-              >
-                <Input type="number" min={1} />
-              </Form.Item>
-            </Col>
-            <Col xs={24}>
-              <Form.Item label="รายละเอียดกิจกรรม" name="description">
-                <TextArea rows={3} />
-              </Form.Item>
-            </Col>
+            <Col xs={24} sm={12}><Form.Item label="ช่วงวันที่" name="dateRange" rules={[{ required: true }]}><RangePicker style={{ width: "100%" }} format="DD/MM/YYYY" /></Form.Item></Col>
+            <Col xs={24} sm={12}><Form.Item label="ช่วงเวลา" name="timeRange" rules={[{ required: true }]}><TimePicker.RangePicker style={{ width: "100%" }} format="HH:mm" /></Form.Item></Col>
+            <Col xs={24} sm={12}><Form.Item label="ห้อง/สถานที่" name="room" rules={[{ required: true }]}><Input /></Form.Item></Col>
+            <Col xs={24} sm={12}><Form.Item label="จำนวนผู้เข้าร่วมสูงสุด" name="maxParticipants" rules={[{ required: true }]}><Input type="number" min={1} /></Form.Item></Col>
+            <Col xs={24}><Form.Item label="รายละเอียดกิจกรรม" name="description"><TextArea rows={3} /></Form.Item></Col>
             <Col span={24} style={{ textAlign: "right" }}>
               <Space>
                 <Button onClick={() => setModalOpen(false)}>ยกเลิก</Button>
-                <Button type="primary" htmlType="submit">
+                <Button type="primary" htmlType="submit" loading={loading}>
                   {editing ? "บันทึก" : "เพิ่ม"}
                 </Button>
               </Space>
@@ -579,30 +509,10 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
         </Form>
       </Modal>
 
-      <Modal
-        title={`รายชื่อผู้เข้าร่วม: ${currentActivity?.activity?.activityName || "..."}`}
-        open={participantModalOpen}
-        onCancel={() => setParticipantModalOpen(false)}
-        footer={null}
-        width={800}
-        destroyOnClose
-      >
-        <Form
-          form={participantForm}
-          layout="inline"
-          onFinish={handleAddParticipant}
-          style={{ marginBottom: 20, marginTop: 24 }}
-        >
-          <Form.Item
-            name="prisonerId"
-            rules={[{ required: true, message: "กรุณาเลือกผู้ต้องขัง" }]}
-            style={{ flex: 1 }}
-          >
-            <Select
-              showSearch
-              placeholder="ค้นหาและเลือกผู้ต้องขัง (พิมพ์รหัส หรือ ชื่อ)"
-              optionFilterProp="children"
-            >
+      <Modal title={`รายชื่อผู้เข้าร่วม: ${currentActivity?.activity?.activityName || "..."}`} open={participantModalOpen} onCancel={() => setParticipantModalOpen(false)} footer={null} width={800} destroyOnClose >
+        <Form form={participantForm} layout="inline" onFinish={handleAddParticipant} style={{ marginBottom: 20, marginTop: 24 }}>
+          <Form.Item name="prisonerId" rules={[{ required: true, message: "กรุณาเลือกผู้ต้องขัง" }]} style={{ flex: 1 }} >
+            <Select showSearch placeholder="ค้นหาและเลือกผู้ต้องขัง (พิมพ์รหัส หรือ ชื่อ)" optionFilterProp="children" >
               {prisoners.map((p) => (
                 <Option key={p.Prisoner_ID} value={p.Prisoner_ID}>
                   {p.Inmate_ID} - {p.FirstName} {p.LastName}
@@ -611,41 +521,23 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
             </Select>
           </Form.Item>
           <Form.Item>
-            <Button type="primary" htmlType="submit" icon={<PlusOutlined />}>
+            <Button type="primary" htmlType="submit" icon={<PlusOutlined />} loading={loading}>
               เพิ่ม
             </Button>
           </Form.Item>
         </Form>
-
-        <Table
-          columns={participantColumns}
-          dataSource={currentActivity?.enrollment}
-          pagination={false}
-          bordered
-          rowKey="enrollment_ID"
-          locale={{ emptyText: "ยังไม่มีผู้เข้าร่วม" }}
-        />
+        <Table columns={participantColumns} dataSource={currentActivity?.enrollment} pagination={false} bordered rowKey="enrollment_ID" locale={{ emptyText: "ยังไม่มีผู้เข้าร่วม" }} />
       </Modal>
 
-      <Modal
-        title="ยืนยันการสละสิทธิ์"
-        open={withdrawalModalOpen}
-        onCancel={() => setWithdrawalModalOpen(false)}
-        footer={null}
-        destroyOnClose
-      >
+      <Modal title="ยืนยันการสละสิทธิ์" open={withdrawalModalOpen} onCancel={() => setWithdrawalModalOpen(false)} footer={null} destroyOnClose >
         <Form form={withdrawalForm} onFinish={handleConfirmWithdrawal} layout="vertical" style={{ marginTop: 24 }}>
-          <Form.Item
-            label="เหตุผลในการสละสิทธิ์"
-            name="remarks"
-            rules={[{ required: true, message: "กรุณากรอกเหตุผล" }]}
-          >
+          <Form.Item label="เหตุผลในการสละสิทธิ์" name="remarks" rules={[{ required: true, message: "กรุณากรอกเหตุผล" }]} >
             <TextArea rows={4} />
           </Form.Item>
           <Form.Item style={{ textAlign: "right", marginBottom: 0 }}>
             <Space>
               <Button onClick={() => setWithdrawalModalOpen(false)}>ยกเลิก</Button>
-              <Button type="primary" danger htmlType="submit">
+              <Button type="primary" danger htmlType="submit" loading={loading}>
                 ยืนยัน
               </Button>
             </Space>
@@ -657,3 +549,4 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
 };
 
 export default ActivityAndVocationalTrainingSchedule;
+
