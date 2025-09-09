@@ -14,22 +14,23 @@ type activityScheduleInput struct {
 	ActivityName    string    `json:"activityName" binding:"required"`
 	Description     string    `json:"description"`
 	Location        string    `json:"room" binding:"required"`
-	MID             uint      `json:"instructorId" binding:"required"`
+	
+	StaffID         uint      `json:"staffId" binding:"required"`
 	MaxParticipants int       `json:"maxParticipants" binding:"required"`
 	StartDate       time.Time `json:"startDate" binding:"required"`
 	EndDate         time.Time `json:"endDate" binding:"required"`
-	StartTime       string    `json:"startTime" binding:"required"` // "HH:MM"
-	EndTime         string    `json:"endTime" binding:"required"`   // "HH:MM"
+	StartTime       string    `json:"startTime" binding:"required"`
+	EndTime         string    `json:"endTime" binding:"required"`
 }
 
-// GET /activity-schedules
+// GET /schedules (ปรับชื่อ endpoint ให้สอดคล้องกับ Frontend)
 func GetActivitySchedules(c *gin.Context) {
 	db := configs.DB()
 
 	var schedules []entity.ActivitySchedule
 	if err := db.
 		Preload("Activity").
-		Preload("Member").
+		Preload("Staff"). 
 		Preload("Enrollment.Prisoner").
 		Order("schedule_id ASC").
 		Find(&schedules).Error; err != nil {
@@ -39,7 +40,7 @@ func GetActivitySchedules(c *gin.Context) {
 	c.JSON(http.StatusOK, schedules)
 }
 
-// POST /activity-schedules
+// POST /schedules
 func CreateActivitySchedule(c *gin.Context) {
 	db := configs.DB()
 
@@ -54,10 +55,10 @@ func CreateActivitySchedule(c *gin.Context) {
 	}
 
 	err := db.Transaction(func(tx *gorm.DB) error {
-		// 1) ตรวจว่ามี Member (ผู้สอน/ผู้นำกิจกรรม) จริงไหม
-		var m entity.Member
-		if err := tx.First(&m, input.MID).Error; err != nil {
-			return err
+		
+		var staff entity.Staff
+		if err := tx.First(&staff, input.StaffID).Error; err != nil {
+			return err // ไม่พบ Staff
 		}
 
 		// 2) หา/สร้าง Activity
@@ -76,7 +77,7 @@ func CreateActivitySchedule(c *gin.Context) {
 			StartTime:   input.StartTime,
 			EndTime:     input.EndTime,
 			Max:         input.MaxParticipants,
-			MID:         input.MID,
+			StaffID:     &input.StaffID, 
 			Activity_ID: activity.Activity_ID,
 		}
 		if err := tx.Create(&schedule).Error; err != nil {
@@ -84,7 +85,7 @@ func CreateActivitySchedule(c *gin.Context) {
 		}
 
 		// โหลดความสัมพันธ์เพื่อตอบกลับ
-		if err := tx.Preload("Activity").Preload("Member").
+		if err := tx.Preload("Activity").Preload("Staff"). 
 			First(&schedule, schedule.Schedule_ID).Error; err != nil {
 			return err
 		}
@@ -98,7 +99,7 @@ func CreateActivitySchedule(c *gin.Context) {
 	}
 }
 
-// PUT /activity-schedules/:id
+// PUT /schedules/:id
 func UpdateActivitySchedule(c *gin.Context) {
 	db := configs.DB()
 	id := c.Param("id")
@@ -114,19 +115,16 @@ func UpdateActivitySchedule(c *gin.Context) {
 	}
 
 	err := db.Transaction(func(tx *gorm.DB) error {
-		// โหลด schedule เดิม
 		var schedule entity.ActivitySchedule
 		if err := tx.First(&schedule, id).Error; err != nil {
 			return err
 		}
 
-		// โหลด activity เดิม
 		var activity entity.Activity
 		if err := tx.First(&activity, schedule.Activity_ID).Error; err != nil {
 			return err
 		}
 
-		// อัปเดต Activity
 		activity.ActivityName = input.ActivityName
 		activity.Location = input.Location
 		activity.Description = input.Description
@@ -134,9 +132,9 @@ func UpdateActivitySchedule(c *gin.Context) {
 			return err
 		}
 
-		// ตรวจ Member ว่ามีอยู่จริง
-		var m entity.Member
-		if err := tx.First(&m, input.MID).Error; err != nil {
+		//  ตรวจ Staff ว่ามีอยู่จริง
+		var staff entity.Staff
+		if err := tx.First(&staff, input.StaffID).Error; err != nil {
 			return err
 		}
 
@@ -146,14 +144,13 @@ func UpdateActivitySchedule(c *gin.Context) {
 		schedule.StartTime = input.StartTime
 		schedule.EndTime = input.EndTime
 		schedule.Max = input.MaxParticipants
-		schedule.MID = input.MID
+		schedule.StaffID = &input.StaffID 
 		if err := tx.Save(&schedule).Error; err != nil {
 			return err
 		}
 
-		// preload ส่งกลับ
 		if err := tx.Preload("Activity").
-			Preload("Member").
+			Preload("Staff"). 
 			Preload("Enrollment.Prisoner").
 			First(&schedule, id).Error; err != nil {
 			return err
@@ -168,51 +165,46 @@ func UpdateActivitySchedule(c *gin.Context) {
 	}
 }
 
-// DELETE /activity-schedules/:id
+// (ส่วนที่เหลือของ Controller เช่น Delete, Enrollments ไม่ต้องแก้ไข เพราะไม่ผูกกับ Member/Staff โดยตรง)
+// DELETE /schedules/:id
 func DeleteActivitySchedule(c *gin.Context) {
-	db := configs.DB()
-	id := c.Param("id")
+    db := configs.DB()
+    id := c.Param("id")
 
-	err := db.Transaction(func(tx *gorm.DB) error {
-		// 1. ค้นหา Schedule ที่จะลบเพื่อเอา Activity_ID มาใช้ทีหลัง
-		var scheduleToDelete entity.ActivitySchedule
-		if err := tx.First(&scheduleToDelete, id).Error; err != nil {
-			// ถ้าไม่เจอ schedule ก็จบการทำงาน
-			return err
-		}
-		activityID := scheduleToDelete.Activity_ID
+    err := db.Transaction(func(tx *gorm.DB) error {
+        var scheduleToDelete entity.ActivitySchedule
+        if err := tx.First(&scheduleToDelete, id).Error; err != nil {
+            return err
+        }
+        activityID := scheduleToDelete.Activity_ID
 
-		// 2. ลบ Enrollment ทั้งหมดที่เกี่ยวข้องกับ Schedule นี้ก่อน (ถูกต้องแล้ว)
-		if err := tx.Where("schedule_id = ?", id).Delete(&entity.Enrollment{}).Error; err != nil {
-			return err
-		}
+        if err := tx.Where("schedule_id = ?", id).Delete(&entity.Enrollment{}).Error; err != nil {
+            return err
+        }
 
-		// 3. ลบ Schedule เอง (ถูกต้องแล้ว)
-		if err := tx.Delete(&entity.ActivitySchedule{}, id).Error; err != nil {
-			return err
-		}
+        if err := tx.Delete(&entity.ActivitySchedule{}, id).Error; err != nil {
+            return err
+        }
 
-		// 4. (ส่วนที่เพิ่มเข้ามา) ตรวจสอบว่ามี Schedule อื่นยังใช้ Activity นี้อยู่หรือไม่
-		var remainingSchedules int64
-		if err := tx.Model(&entity.ActivitySchedule{}).Where("activity_id = ?", activityID).Count(&remainingSchedules).Error; err != nil {
-			return err
-		}
+        var remainingSchedules int64
+        if err := tx.Model(&entity.ActivitySchedule{}).Where("activity_id = ?", activityID).Count(&remainingSchedules).Error; err != nil {
+            return err
+        }
 
-		// 5. (ส่วนที่เพิ่มเข้ามา) ถ้าไม่มี Schedule ไหนใช้ Activity นี้แล้ว ก็ลบ Activity ทิ้ง
-		if remainingSchedules == 0 {
-			if err := tx.Delete(&entity.Activity{}, activityID).Error; err != nil {
-				return err
-			}
-		}
+        if remainingSchedules == 0 {
+            if err := tx.Delete(&entity.Activity{}, activityID).Error; err != nil {
+                return err
+            }
+        }
 
-		return nil
-	})
+        return nil
+    })
 
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"message": "Schedule and related data deleted successfully"})
+    if err != nil {
+        c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+        return
+    }
+    c.JSON(http.StatusOK, gin.H{"message": "Schedule and related data deleted successfully"})
 }
 
 type enrollmentInput struct {
