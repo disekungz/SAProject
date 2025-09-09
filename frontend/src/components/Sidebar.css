@@ -1,82 +1,125 @@
+/* ===== Layout พื้นฐาน ===== */
 .sidebar {
-  width: 220px;
-  height: auto;          /* สูงตามเนื้อหา */
-  min-height: 100vh;     /* อย่างน้อยเต็มจอ */
-  background-color: #011627;
-  color: white;
+  position: sticky;
+  top: 0;
+  left: 0;
+  height: 100vh;               /* เต็มความสูงหน้าจอ */
+  width: 260px;                 /* กว้างปกติ */
+  background: #0f172a;          /* slate-900-ish */
+  color: #e2e8f0;               /* slate-200 */
   display: flex;
   flex-direction: column;
-  padding: 20px 10px;
-  transition: width 0.2s;
+  z-index: 20;
 }
 
 .sidebar.collapsed {
-  width: 70px;
+  width: 72px;                  /* กว้างตอนยุบ */
 }
 
+/* ===== Header ===== */
 .sidebar-header {
-  font-size: 20px;
-  font-weight: bold;
-  margin-bottom: 30px;
-  text-align: center;
+  padding: 16px 14px 10px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
 }
 
+.brand {
+  font-weight: 700;
+  letter-spacing: .5px;
+  color: #fff;
+  margin-bottom: 6px;
+}
+
+.user-box {
+  font-size: 12px;
+  line-height: 1.25;
+  margin-top: 4px;
+}
+
+.user-name { color: #e2e8f0; }
+.user-rank { color: #cbd5e1; opacity: .9; }
+
+/* ===== Menu ===== */
 .menu {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  /* ❌ ลบ overflow-y:auto; กับ flex:1; ออก */
+  flex: 1 1 auto;               /* ดันให้เมนูยืดกินพื้นที่ที่เหลือ เพื่อให้ปุ่มล่างถูกตรึง */
+  overflow-y: auto;
+  padding: 6px 0;
 }
 
 .menu-item {
   display: flex;
   align-items: center;
   gap: 10px;
-  color: white;
-  text-decoration: none;
-  padding: 10px;
+  padding: 10px 12px;
+  margin: 4px 8px;
   border-radius: 8px;
-  transition: background 0.2s;
+  color: #e2e8f0;
+  text-decoration: none;
+  transition: background .15s ease, color .15s ease;
 }
 
-.menu-item:hover {
-  background-color: #1e3a8a;
-}
-
+.menu-item:hover,
 .menu-item.active {
-  background-color: #2563eb;
-  color: white;
+  background: rgba(255,255,255,0.08);
+  color: #fff;
 }
 
-.sidebar.collapsed .menu-item {
-  justify-content: center;
-}
-
-.sidebar.collapsed .menu-item span {
-  display: none;
-}
-
-.collapse-button {
-  text-align: center;
-  cursor: pointer;
-  padding: 10px;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
-  margin-top: auto; /* ดันไปล่าง */
-}
-
-button {
-  margin-top: 10px;
-  background: transparent;
+/* ให้ทั้ง <a> และ <button> ใช้หน้าตาเดียวกัน */
+.menu-item.button,
+.menu-item.logout-btn {
   border: none;
-  color: white;
+  outline: none;
+  background: transparent;
+  width: calc(100% - 16px);
+  margin: 4px 8px;
   cursor: pointer;
+}
+
+/* ===== Collapse Toggle ===== */
+.collapse-button {
+  margin: 6px 12px 8px;
+  display: flex;
+  justify-content: flex-end;
+  color: #94a3b8;
+  cursor: pointer;
+  user-select: none;
+}
+
+.collapse-button:hover {
+  color: #cbd5e1;
+}
+
+/* ===== Logout Button (แดง) ===== */
+.logout-btn {
+  background: #ef4444;          /* red-500 */
+  color: #fff;
+  border: none;
+  padding: 10px 12px;
+  border-radius: 8px;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px;
+  gap: 10px;
 }
 
-button:hover {
-  background-color: #1e3a8a;
+.logout-btn:hover {
+  background: #dc2626;          /* red-600 */
+}
+
+.logout-btn.is-collapsed {
+  justify-content: center;
+  width: calc(100% - 16px);
+}
+
+/* กันไอคอนโดนบีบ */
+.logout-btn svg { flex-shrink: 0; }
+
+/* ===== Scrollbar (optional สวยขึ้นนิด) ===== */
+.menu::-webkit-scrollbar {
+  width: 8px;
+}
+.menu::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.12);
   border-radius: 8px;
+}
+.menu::-webkit-scrollbar-thumb:hover {
+  background: rgba(255,255,255,0.18);
 }
