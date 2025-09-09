@@ -1,5 +1,4 @@
-// src/App.tsx
-import { BrowserRouter as Router, Routes, Route, useLocation } from "react-router-dom";
+import { BrowserRouter as Router, Routes, Route, useLocation, Navigate } from "react-router-dom";
 import Sidebar from "./components/Sidebar";
 import InventorySystem from "./components/InventorySystem";
 import ScoreBehavior from "./components/ScoreBehavior";
@@ -19,12 +18,14 @@ import LoginPage from "./pages/login";
 
 function Shell() {
   const { pathname } = useLocation();
-  const hideSidebar = pathname === "/login" || pathname === "/register";
+  const isAuth = pathname === "/login" || pathname === "/register";
 
   return (
-    <div style={{ display: "flex" }}>
-      {!hideSidebar && <Sidebar />}
-      <div style={{ flex: 1, padding: "20px" }}>
+    <div className="app-shell">
+      {!isAuth && <Sidebar />}
+
+      {/* ถ้าเป็นหน้า auth เอา padding ออกเพื่อให้เต็มขอบจริง ๆ */}
+      <div style={{ flex: 1, padding: isAuth ? 0 : 20 }}>
         <Routes>
           {/* ไม่ต้องล็อกอิน */}
           <Route path="/login" element={<LoginPage />} />
@@ -44,6 +45,8 @@ function Shell() {
           <Route path="/behavior" element={<ProtectedRoute><BehaviorEvaluation /></ProtectedRoute>} />
           <Route path="/activity" element={<ProtectedRoute><ActivityAndVocationalTrainingSchedule /></ProtectedRoute>} />
           <Route path="/membermanagement" element={<ProtectedRoute><MemberManagement /></ProtectedRoute>} />
+
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </div>
     </div>
