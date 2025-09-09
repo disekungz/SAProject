@@ -49,7 +49,6 @@ func main() {
 		api.POST("/adjustments", controller.CreateAdjustment)
 
 		// --- Medical & Inventory Routes ---
-		api.GET("/doctors", controller.GetDoctors)
 		api.GET("/medical_histories", controller.GetMedicalHistories)
 		api.POST("/medical_histories", controller.CreateMedicalHistory)
 		api.PUT("/medical_histories/:id", controller.UpdateMedicalHistory)
