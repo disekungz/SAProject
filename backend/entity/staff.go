@@ -16,8 +16,5 @@ type Staff struct {
 	Gender_ID *uint `gorm:"not null"` // เปลี่ยนเป็น *uint
 	Gender    Gender `gorm:"foreignKey:Gender_ID"`
 
-	RankID *uint `gorm:"default:null"` // เปลี่ยนเป็น *uint
-	Rank   Rank `gorm:"foreignKey:RankID"`
-
 	Requestings []Requesting `gorm:"foreignKey:StaffID"`
 }
