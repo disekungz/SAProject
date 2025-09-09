@@ -9,13 +9,13 @@ import (
 	"github.com/sa-project/entity"
 )
 
-// StaffInput - Struct สำหรับรับข้อมูล JSON จาก Frontend (ตัด Username/Password/AdminID ออกแล้ว)
+// StaffInput - รับจาก Frontend (ตัด Username/Password/AdminID ออก)
 type StaffInput struct {
 	StaffID   uint   `json:"StaffID"`
 	Email     string `json:"Email"`
 	FirstName string `json:"FirstName" binding:"required"`
 	LastName  string `json:"LastName" binding:"required"`
-	Birthday  string `json:"Birthday" binding:"required"` // รับเป็น string เพื่อแปลง
+	Birthday  string `json:"Birthday" binding:"required"` // รับเป็น string เพื่อแปลงเป็น time.Time
 	Status    string `json:"Status" binding:"required"`
 	Address   string `json:"Address"`
 	Gender_ID *uint  `json:"Gender_ID" binding:"required"`
@@ -23,24 +23,23 @@ type StaffInput struct {
 
 // --- Staff Handlers ---
 
-// GetStaffs - ดึงข้อมูลเจ้าหน้าที่ทั้งหมด (Preload เฉพาะที่จำเป็น)
+// GetStaffs - ดึงข้อมูลเจ้าหน้าที่ทั้งหมด
 func GetStaffs(c *gin.Context) {
 	var staffs []entity.Staff
-	if err := configs.DB().
-		Preload("Gender").
-		Find(&staffs).Error; err != nil {
+	if err := configs.DB().Find(&staffs).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch staffs"})
 		return
 	}
 	c.JSON(http.StatusOK, staffs)
 }
 
-// GetStaffByID - ดึงข้อมูลเจ้าหน้าที่คนเดียวตาม ID (เอา Rank ออก)
+// GetStaffByID - ดึงข้อมูลเจ้าหน้าที่คนเดียวตาม ID (ตัด Admin ออก)
 func GetStaffByID(c *gin.Context) {
 	id := c.Param("id")
 	var staff entity.Staff
 	if err := configs.DB().
 		Preload("Gender").
+		Preload("Rank").
 		First(&staff, id).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Staff not found"})
 		return
@@ -48,7 +47,17 @@ func GetStaffByID(c *gin.Context) {
 	c.JSON(http.StatusOK, staff)
 }
 
-// CreateStaff - สร้างเจ้าหน้าที่ใหม่ (ไม่รับ username/password/admin อีกต่อไป)
+// parseBirthday - helper รองรับ RFC3339 เป็นหลัก
+func parseBirthdayStaff(s string) (time.Time, error) {
+	// ลอง RFC3339 ก่อน เช่น "2006-01-02T15:04:05Z07:00"
+	if t, err := time.Parse(time.RFC3339, s); err == nil {
+		return t, nil
+	}
+	// เผื่อกรณีส่งมาเป็น "YYYY-MM-DD"
+	return time.Parse("2006-01-02", s)
+}
+
+// CreateStaff - สร้างเจ้าหน้าที่ใหม่ (ไม่รับ Username/Password/AdminID)
 func CreateStaff(c *gin.Context) {
 	var input StaffInput
 	if err := c.ShouldBindJSON(&input); err != nil {
@@ -56,14 +65,12 @@ func CreateStaff(c *gin.Context) {
 		return
 	}
 
-	// แปลงวันเกิดจาก ISO 8601 string -> time.Time
-	birthday, err := time.Parse(time.RFC3339, input.Birthday)
+	birthday, err := parseBirthdayStaff(input.Birthday)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid Birthday format, use ISO 8601 (RFC3339)"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid Birthday format, use ISO 8601 (RFC3339) or YYYY-MM-DD"})
 		return
 	}
 
-	// map เฉพาะฟิลด์ที่ใช้จริงไปยัง entity.Staff
 	staff := entity.Staff{
 		Email:     input.Email,
 		FirstName: input.FirstName,
@@ -72,6 +79,7 @@ func CreateStaff(c *gin.Context) {
 		Status:    input.Status,
 		Address:   input.Address,
 		Gender_ID: input.Gender_ID,
+		// ไม่ตั้งค่า Username / Password / AdminID
 	}
 
 	if err := configs.DB().Create(&staff).Error; err != nil {
@@ -82,7 +90,7 @@ func CreateStaff(c *gin.Context) {
 	c.JSON(http.StatusCreated, staff)
 }
 
-// UpdateStaff - อัปเดตข้อมูลเจ้าหน้าที่ (เอา Rank ออก)
+// UpdateStaff - อัปเดตข้อมูลเจ้าหน้าที่ (ไม่ยุ่งกับ Username/Password/AdminID)
 func UpdateStaff(c *gin.Context) {
 	id := c.Param("id")
 	var staff entity.Staff
@@ -97,9 +105,9 @@ func UpdateStaff(c *gin.Context) {
 		return
 	}
 
-	birthday, err := time.Parse(time.RFC3339, input.Birthday)
+	birthday, err := parseBirthday(input.Birthday)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid Birthday format, use ISO 8601 (RFC3339)"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid Birthday format, use ISO 8601 (RFC3339) or YYYY-MM-DD"})
 		return
 	}
 
@@ -111,6 +119,7 @@ func UpdateStaff(c *gin.Context) {
 		Status:    input.Status,
 		Address:   input.Address,
 		Gender_ID: input.Gender_ID,
+		// ไม่อัปเดต Username / Password / AdminID
 	}
 
 	if err := configs.DB().Model(&staff).Updates(updateData).Error; err != nil {
@@ -118,10 +127,7 @@ func UpdateStaff(c *gin.Context) {
 		return
 	}
 
-	configs.DB().
-		Preload("Gender").
-		First(&staff, id)
-
+	configs.DB().Preload("Gender").Preload("Rank").First(&staff, id)
 	c.JSON(http.StatusOK, staff)
 }
 
@@ -129,7 +135,6 @@ func UpdateStaff(c *gin.Context) {
 func DeleteStaff(c *gin.Context) {
 	id := c.Param("id")
 
-	// ตรวจความสัมพันธ์อื่น ๆ ตามเดิม
 	var count int64
 	configs.DB().Model(&entity.Requesting{}).Where("staff_id = ?", id).Count(&count)
 	if count > 0 {
