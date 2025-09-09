@@ -1,11 +1,11 @@
+import React from "react";
 import { NavLink } from "react-router-dom";
 import {
   LayoutDashboard, Users, Heart, Box, Smile, ChevronLeft,
   ClipboardList, DoorClosed, UserPen, Handshake, BookOpen,
-  CalendarDays, BookOpenCheck, LogOut, ChevronRight
+  CalendarDays, BookOpenCheck, LogOut, ChevronRight, Contact
 } from "lucide-react";
 import "./Sidebar.css";
-import React from "react";
 import { getUser, clearAuth } from "../lib/auth";
 import { api } from "../lib/axios";
 
@@ -30,6 +30,7 @@ export default function Sidebar() {
     } catch { return []; }
   });
 
+  // sync user (login/logout/เปลี่ยนแท็บ)
   React.useEffect(() => {
     const sync = () => setUser(getUser());
     window.addEventListener("storage", sync);
@@ -40,6 +41,7 @@ export default function Sidebar() {
     };
   }, []);
 
+  // โหลด rank + cache
   React.useEffect(() => {
     let alive = true;
     (async () => {
@@ -56,9 +58,10 @@ export default function Sidebar() {
 
   const rankName =
     user
-      ? (ranks.find(r => r.RankID === user.rankId)?.RankName ?? fallbackRankName(user.rankId))
+      ? (ranks.find(r => r.RankID === user?.rankId)?.RankName ?? fallbackRankName(user?.rankId))
       : null;
 
+  // เมนู + สิทธิ์
   const menu = [
     { to: "/", icon: <LayoutDashboard size={18} />, label: "แดชบอร์ด", allowed: [1, 2] },
     { to: "/prisonermanagement", icon: <UserPen size={18} />, label: "จัดการข้อมูลผู้ต้องขัง", allowed: [1, 2] },
@@ -72,19 +75,19 @@ export default function Sidebar() {
     { to: "/petition", icon: <BookOpen size={18} />, label: "ยื่นคำร้องทั่วไป", allowed: [1, 2] },
     { to: "/behavior", icon: <BookOpenCheck size={18} />, label: "การประเมินพฤติกรรม", allowed: [1, 2] },
     { to: "/activity", icon: <CalendarDays size={18} />, label: "ตารางกิจกรรมวิชาชีพ", allowed: [1, 2] },
-    { to: "/membermanagement", icon: <Users size={18} />, label: "จัดการสมาชิก", allowed: [1] },
+    { to: "/membermanagement", icon: <Contact size={18} />, label: "จัดการสมาชิก", allowed: [1] },
   ];
 
-  const visibleMenu = menu.filter(m => user && m.allowed.includes(user.rankId));
+  const visibleMenu = user ? menu.filter(m => m.allowed.includes(user.rankId)) : [];
 
   return (
-    <div className={`sidebar ${collapsed ? "collapsed" : ""}`}>
+    <aside className={`sidebar ${collapsed ? "collapsed" : ""}`}>
       <div className="sidebar-header">
-        {!collapsed && "IPMS"}
+        <div className="brand">IPMS</div>
         {user && !collapsed && (
-          <div style={{ fontSize: 12, lineHeight: 1.25, marginTop: 4 }}>
-            <div>👤 {user.firstName} {user.lastName}</div>
-            <div style={{ opacity: 0.8 }}>🏷️ {rankName}</div>
+          <div className="user-box">
+            <div className="user-name">👤 {user.firstName} {user.lastName}</div>
+            <div className="user-rank">🏷️ {rankName}</div>
           </div>
         )}
       </div>
@@ -109,15 +112,18 @@ export default function Sidebar() {
       </div>
 
       <button
+        type="button"
+        className={`menu-item logout-btn ${collapsed ? "is-collapsed" : ""}`}
         onClick={() => {
           clearAuth();
           window.dispatchEvent(new Event("auth:changed"));
           window.location.href = "/login";
         }}
+        title={collapsed ? "ออกจากระบบ" : undefined}
       >
         <LogOut size={18} />
-        {!collapsed && "ออกจากระบบ"}
+        {!collapsed && <span>ออกจากระบบ</span>}
       </button>
-    </div>
+    </aside>
   );
 }
