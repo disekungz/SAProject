@@ -35,15 +35,12 @@ func GetStaffs(c *gin.Context) {
 	c.JSON(http.StatusOK, staffs)
 }
 
-// GetStaffByID - ดึงข้อมูลเจ้าหน้าที่คนเดียวตาม ID (ตัด Preload Admin ออก)
+// GetStaffByID - ดึงข้อมูลเจ้าหน้าที่คนเดียวตาม ID (เอา Rank ออก)
 func GetStaffByID(c *gin.Context) {
 	id := c.Param("id")
 	var staff entity.Staff
 	if err := configs.DB().
 		Preload("Gender").
-		// ตัด .Preload("Admin") ออก
-		// ถ้าไม่ใช้ Rank ก็ลบบรรทัดนี้ได้เช่นกัน
-		Preload("Rank").
 		First(&staff, id).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Staff not found"})
 		return
@@ -85,7 +82,7 @@ func CreateStaff(c *gin.Context) {
 	c.JSON(http.StatusCreated, staff)
 }
 
-// UpdateStaff - อัปเดตข้อมูลเจ้าหน้าที่ (ไม่มี username/password/admin อยู่แล้ว)
+// UpdateStaff - อัปเดตข้อมูลเจ้าหน้าที่ (เอา Rank ออก)
 func UpdateStaff(c *gin.Context) {
 	id := c.Param("id")
 	var staff entity.Staff
@@ -123,8 +120,6 @@ func UpdateStaff(c *gin.Context) {
 
 	configs.DB().
 		Preload("Gender").
-		// ตัด .Preload("Admin") ออก
-		Preload("Rank").
 		First(&staff, id)
 
 	c.JSON(http.StatusOK, staff)
