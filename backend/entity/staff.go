@@ -7,8 +7,6 @@ import (
 type Staff struct {
 	StaffID   uint      `gorm:"primaryKey"` // เปลี่ยนเป็น uint
 	Email     string    `gorm:"unique"`
-	Username  string    `gorm:"unique"`
-	Password  string    `gorm:"not null"`
 	FirstName string    `gorm:"not null"`
 	LastName  string    `gorm:"not null"`
 	Birthday  time.Time `gorm:"type:date;not null"`
