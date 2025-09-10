@@ -19,10 +19,12 @@ type registerInput struct {
 	Username  string `json:"username"  binding:"required"`
 	Password  string `json:"password"  binding:"required,min=6"`
 	Email     string `json:"email"     binding:"required"`
-	RankID    *int   `json:"rankId"` // ✅ ทำให้เป็น optional
+	RankID    *int   `json:"rankId"`
 	FirstName string `json:"firstName" binding:"required"`
 	LastName  string `json:"lastName"  binding:"required"`
-	Birthday  string `json:"birthday"  binding:"required"` // RFC3339 หรือ YYYY-MM-DD
+	Birthday  string `json:"birthday"  binding:"required"`
+	// ⭐️ เพิ่ม CitizenID เข้ามาใน struct สำหรับ Register
+	CitizenID string `json:"citizenId" binding:"required"`
 }
 
 type loginInput struct {
@@ -55,6 +57,7 @@ func Register(c *gin.Context) {
 	in.Email = strings.ToLower(strings.TrimSpace(in.Email))
 	in.FirstName = strings.TrimSpace(in.FirstName)
 	in.LastName = strings.TrimSpace(in.LastName)
+	in.CitizenID = strings.TrimSpace(in.CitizenID)
 
 	// unique checks
 	var cnt int64
@@ -69,14 +72,19 @@ func Register(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"error": "email already exists"})
 		return
 	}
+	// ⭐️ ตรวจสอบ CitizenID ซ้ำ
+	cnt = 0
+	db.Model(&entity.Member{}).Where("citizen_id = ?", in.CitizenID).Count(&cnt)
+	if cnt > 0 {
+		c.JSON(http.StatusConflict, gin.H{"error": "citizen ID already exists"})
+		return
+	}
 
-	// ✅ เลือก Rank เริ่มต้นเป็น "ญาติ" ถ้าไม่ส่ง rankId มา หรือส่ง 0
+
 	var rankID int
 	if in.RankID == nil || *in.RankID == 0 {
 		var def entity.Rank
-		// หาตามชื่อก่อน (กันกรณี id เปลี่ยน)
 		if err := db.Where("rank_name = ?", "ญาติ").First(&def).Error; err != nil {
-			// เผื่อ seed เป็นเลข 3 ตามที่ตั้งไว้
 			if err2 := db.Where("rank_id = ?", 3).First(&def).Error; err2 != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "default rank 'ญาติ' not found; please seed ranks"})
 				return
@@ -85,7 +93,6 @@ func Register(c *gin.Context) {
 		rankID = def.RankID
 	} else {
 		rankID = *in.RankID
-		// ตรวจสอบว่ามี rank นี้จริง
 		var r entity.Rank
 		if err := db.Where("rank_id = ?", rankID).First(&r).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -97,14 +104,12 @@ func Register(c *gin.Context) {
 		}
 	}
 
-	// birthday
 	bday, err := parseBirthday(in.Birthday)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	// hash password
 	hash, err := bcrypt.GenerateFromPassword([]byte(in.Password), bcrypt.DefaultCost)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "cannot hash password: " + err.Error()})
@@ -115,10 +120,12 @@ func Register(c *gin.Context) {
 		Username:  in.Username,
 		Password:  string(hash),
 		Email:     in.Email,
-		RankID:    rankID, // ✅ ใช้ค่า default/หรือค่าที่ส่งมา
+		RankID:    rankID,
 		FirstName: in.FirstName,
 		LastName:  in.LastName,
 		Birthday:  bday,
+		// ⭐️ เพิ่ม CitizenID ตอนสร้าง Member
+		CitizenID: in.CitizenID,
 	}
 
 	if err := db.Create(&m).Error; err != nil {
@@ -132,6 +139,7 @@ func Register(c *gin.Context) {
 		"firstName": m.FirstName,
 		"lastName":  m.LastName,
 		"rankId":    m.RankID,
+		"citizenId": m.CitizenID,
 	})
 }
 
@@ -158,11 +166,14 @@ func Login(c *gin.Context) {
 		return
 	}
 
+	// ⭐️ เพิ่มข้อมูลเข้าไปใน claims ของ Token
 	claims := jwt.MapClaims{
-		"mid":      m.MID,
-		"username": m.Username,
-		"exp":      time.Now().Add(configs.AccessTokenTTL()).Unix(),
-		"iat":      time.Now().Unix(),
+		"mid":       m.MID,
+		"username":  m.Username,
+		"rankId":    m.RankID,
+		"citizenId": m.CitizenID, // <-- ข้อมูลสำคัญที่ต้องเพิ่ม
+		"exp":       time.Now().Add(configs.AccessTokenTTL()).Unix(),
+		"iat":       time.Now().Unix(),
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	signed, err := token.SignedString(configs.JWTSecret())
@@ -179,6 +190,7 @@ func Login(c *gin.Context) {
 			"firstName": m.FirstName,
 			"lastName":  m.LastName,
 			"rankId":    m.RankID,
+			"citizenId": m.CitizenID, // ⭐️ เพิ่มข้อมูลใน object user ที่ส่งกลับไป
 		},
 	})
 }
@@ -204,5 +216,7 @@ func Me(c *gin.Context) {
 		"firstName": m.FirstName,
 		"lastName":  m.LastName,
 		"rankId":    m.RankID,
+		"citizenId": m.CitizenID, // ⭐️ เพิ่ม citizenId ใน /me ด้วย
 	})
 }
+
