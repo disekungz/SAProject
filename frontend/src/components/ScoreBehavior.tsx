@@ -10,9 +10,8 @@ import {
   Add as AddIcon, Remove as RemoveIcon, Edit as EditIcon,
   Save as SaveIcon, Cancel as CancelIcon,
 } from "@mui/icons-material";
-import { api } from "../lib/axios"; // ✅ ใช้ instance ที่แนบ token ให้อัตโนมัติ
+import { api } from "../lib/axios";
 
-/** ===================== Types ===================== **/
 type ScoreBehaviorItem = {
   SID: number | null;
   Prisoner_ID: number;
@@ -46,11 +45,11 @@ type AdjustmentLog = {
   };
 };
 
-/** ===================== Component ===================== **/
 const ScoreBehavior: React.FC = () => {
   const [scores, setScores] = useState<ScoreBehaviorItem[]>([]);
   const [selected, setSelected] = useState<ScoreBehaviorItem | null>(null);
   const [tempScore, setTempScore] = useState(0);
+  const [tempRemark, setTempRemark] = useState("");            // ✅ ช่องหมายเหตุ
   const [editing, setEditing] = useState(false);
   const [logs, setLogs] = useState<AdjustmentLog[]>([]);
   const [inmateMap, setInmateMap] = useState<Record<number, string>>({});
@@ -62,14 +61,12 @@ const ScoreBehavior: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [loadingLogs, setLoadingLogs] = useState(false);
 
-  /** ===================== Effects ===================== **/
   useEffect(() => {
     fetchScores();
     fetchAdjustmentLogs();
     buildInmateMap();
   }, []);
 
-  /** ===================== Fetchers ===================== **/
   const fetchScores = async () => {
     setLoading(true);
     try {
@@ -117,7 +114,6 @@ const ScoreBehavior: React.FC = () => {
     }
   };
 
-  /** ===================== UI Helpers ===================== **/
   const showSnackbar = (
     message: string,
     severity: "success" | "error" | "warning" | "info"
@@ -147,17 +143,18 @@ const ScoreBehavior: React.FC = () => {
     return log.Member?.FirstName ?? "—";
   };
 
-  /** ===================== Actions ===================== **/
   const handleEdit = () => {
     if (selected) {
       setEditing(true);
       setTempScore(selected.Score);
+      setTempRemark(""); // เริ่มว่างทุกครั้ง (หรือจะ preload ค่าก่อนหน้าเองก็ได้)
     }
   };
 
   const handleCancel = () => {
     setEditing(false);
     setSelected(null);
+    setTempRemark("");
   };
 
   const handleConfirm = async () => {
@@ -168,15 +165,15 @@ const ScoreBehavior: React.FC = () => {
     }
 
     try {
-      // ✅ ไม่ต้องส่ง mid; backend จะอ่านจาก JWT (Authorization) เอง
       await api.post("/adjustments", {
         prisoner_id: selected.Prisoner_ID,
         newScore: tempScore,
-        remarks: "แก้ไขคะแนนผ่านระบบ",
+        remarks: (tempRemark ?? "").trim(),        // ✅ ส่งหมายเหตุไป backend
       });
       await Promise.all([fetchScores(), fetchAdjustmentLogs()]);
       setEditing(false);
       setSelected(null);
+      setTempRemark("");
       showSnackbar("อัปเดตคะแนนสำเร็จ", "success");
     } catch (err: any) {
       console.error("Error updating score:", err);
@@ -185,7 +182,6 @@ const ScoreBehavior: React.FC = () => {
     }
   };
 
-  /** ===================== Render ===================== **/
   return (
     <div>
       <div style={{ padding: 16 }}>
@@ -253,7 +249,9 @@ const ScoreBehavior: React.FC = () => {
           <Card style={{ marginBottom: 24 }}>
             <CardContent>
               <Typography variant="h6" gutterBottom>แก้ไขคะแนนสำหรับนักโทษ</Typography>
-              <Box display="flex" alignItems="center" gap={2} flexWrap="wrap">
+
+              {/* แถวข้อมูลอ่านอย่างเดียว */}
+              <Box display="flex" alignItems="center" gap={2} flexWrap="wrap" mb={2}>
                 <TextField
                   label="รหัสนักโทษ"
                   value={selected.Inmate_ID || "—"}
@@ -265,7 +263,7 @@ const ScoreBehavior: React.FC = () => {
                   value={`${selected.FirstName} ${selected.LastName}`}
                   InputProps={{ readOnly: true }}
                   size="small"
-                  style={{ minWidth: 200 }}
+                  style={{ minWidth: 220 }}
                 />
                 <TextField
                   label="คะแนนปัจจุบัน"
@@ -273,39 +271,62 @@ const ScoreBehavior: React.FC = () => {
                   InputProps={{ readOnly: true }}
                   size="small"
                 />
+              </Box>
+
+              {/* แถวแก้ไขคะแนน + หมายเหตุ */}
+              <Box display="flex" alignItems="center" gap={12} flexWrap="wrap">
                 {!editing ? (
                   <Button variant="contained" startIcon={<EditIcon />} onClick={handleEdit}>
                     แก้ไขคะแนน
                   </Button>
                 ) : (
                   <>
-                    <Button
-                      variant="outlined"
-                      onClick={() => setTempScore((prev) => Math.max(0, prev - 1))}
-                      disabled={tempScore <= 0}
-                    >
-                      <RemoveIcon />
-                    </Button>
+                    <Box display="flex" alignItems="center" gap={8}>
+                      <Button
+                        variant="outlined"
+                        onClick={() => setTempScore((prev) => Math.max(0, prev - 1))}
+                        disabled={tempScore <= 0}
+                        sx={{ minWidth: 40 }}
+                      >
+                        <RemoveIcon />
+                      </Button>
+                      <TextField
+                        label="คะแนนใหม่"
+                        value={tempScore}
+                        onChange={(e) => {
+                          const value = parseInt(e.target.value);
+                          if (!isNaN(value)) setTempScore(Math.max(0, value));
+                          else if (e.target.value === "") setTempScore(0);
+                        }}
+                        type="number"
+                        size="small"
+                        style={{ width: 120 }}
+                        inputProps={{ min: 0 }}
+                      />
+                      <Button variant="outlined" onClick={() => setTempScore((prev) => prev + 1)} sx={{ minWidth: 40 }}>
+                        <AddIcon />
+                      </Button>
+                    </Box>
+
                     <TextField
-                      value={tempScore}
-                      onChange={(e) => {
-                        const value = parseInt(e.target.value);
-                        if (!isNaN(value)) setTempScore(Math.max(0, value));
-                      }}
-                      type="number"
+                      label="หมายเหตุ (ถ้ามี)"
+                      placeholder="ระบุเหตุผลการแก้ไขคะแนน"
+                      value={tempRemark}
+                      onChange={(e) => setTempRemark(e.target.value)}
                       size="small"
-                      style={{ width: 80 }}
-                      inputProps={{ min: 0 }}
+                      multiline
+                      minRows={2}
+                      sx={{ flex: 1, minWidth: 260 }}
                     />
-                    <Button variant="outlined" onClick={() => setTempScore((prev) => prev + 1)}>
-                      <AddIcon />
-                    </Button>
-                    <Button variant="contained" color="success" startIcon={<SaveIcon />} onClick={handleConfirm}>
-                      ยืนยัน
-                    </Button>
-                    <Button variant="outlined" color="error" startIcon={<CancelIcon />} onClick={handleCancel}>
-                      ยกเลิก
-                    </Button>
+
+                    <Box display="flex" gap={1}>
+                      <Button variant="contained" color="success" startIcon={<SaveIcon />} onClick={handleConfirm}>
+                        ยืนยัน
+                      </Button>
+                      <Button variant="outlined" color="error" startIcon={<CancelIcon />} onClick={handleCancel}>
+                        ยกเลิก
+                      </Button>
+                    </Box>
                   </>
                 )}
               </Box>
@@ -334,7 +355,7 @@ const ScoreBehavior: React.FC = () => {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {[...logs] // clone ก่อน sort กัน mutate state
+                  {[...logs]
                     .sort((a, b) => new Date(b.Date).getTime() - new Date(a.Date).getTime())
                     .map((log) => (
                       <TableRow key={log.AID}>
@@ -364,7 +385,6 @@ const ScoreBehavior: React.FC = () => {
           </CardContent>
         </Card>
 
-        {/* Snackbar */}
         <Snackbar
           open={snackbar.open}
           autoHideDuration={3000}
