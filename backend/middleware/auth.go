@@ -19,12 +19,18 @@ func AuthOptional() gin.HandlerFunc {
 				return configs.JWTSecret(), nil
 			})
 			if err == nil && tkn.Valid {
+				// --- ส่วนที่แก้ไข ---
+				// ดึงค่าต่างๆ จาก claims แล้ว Set เข้าไปใน Context
 				if mid, ok := claims["mid"].(float64); ok {
-					c.Set("mid", uint(mid))
+					c.Set("memberID", uint(mid))
 				}
-				if username, ok := claims["username"].(string); ok {
-					c.Set("username", username)
+				if rankId, ok := claims["rankId"].(float64); ok {
+					c.Set("rankId", uint(rankId))
 				}
+				if citizenId, ok := claims["citizenId"].(string); ok {
+					c.Set("citizenId", citizenId)
+				}
+				// --- สิ้นสุดส่วนที่แก้ไข ---
 			}
 		}
 		c.Next()
@@ -33,7 +39,8 @@ func AuthOptional() gin.HandlerFunc {
 
 func AuthRequired() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if _, ok := c.Get("mid"); !ok {
+		// เปลี่ยน key ที่ตรวจสอบเป็น "memberID" ให้ตรงกับที่ Set ไว้
+		if _, ok := c.Get("memberID"); !ok {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 			return
 		}
