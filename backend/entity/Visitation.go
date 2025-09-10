@@ -1,12 +1,14 @@
 package entity
 
 import (
+	"time"
+
 	"gorm.io/gorm"
 )
 
 type Visitation struct {
 	gorm.Model
-	Visit_Date       string
+	Visit_Date       time.Time
 	Visit_Time_Start string
 	Visit_Time_End   string
 
