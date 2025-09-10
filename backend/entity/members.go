@@ -12,6 +12,10 @@ type Member struct {
 	LastName  string    `gorm:"column:last_name;not null" json:"LastName"`
 	Birthday  time.Time `gorm:"column:birthday;not null" json:"Birthday"`
 
+
+	// CitizenID เป็นสิ่งจำเป็นสำหรับเชื่อมข้อมูล "ผู้ใช้งาน" กับ "ผู้เยี่ยมชม"
+	CitizenID string    `gorm:"column:citizen_id;unique;not null" json:"citizenId"`
+
 	// ให้ชี้ FK/PK ให้ตรงคอลัมน์จริงของ Rank (ปรับตาม struct Rank ของคุณ)
 	Rank Rank `gorm:"foreignKey:RankID;references:RankID" json:"Rank"`
 
