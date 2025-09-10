@@ -1,7 +1,10 @@
+// BehaviorEvaluation.tsx
+
 import { useState, useEffect } from "react";
 import {
-  Input, Button, Form, DatePicker, Typography, Row, Col, message,
+  Input, Button, Form, DatePicker, Typography, Row, Col,
   Table, Space, Modal, Popconfirm, Select, InputNumber, Dropdown,
+  notification, // ✅ 1. Import notification
 } from "antd";
 import {
   SearchOutlined, EditOutlined, DeleteOutlined, PlusOutlined, MoreOutlined,
@@ -16,10 +19,8 @@ const { Title, Text } = Typography;
 const { Option } = Select;
 const BASE = "http://localhost:8088/api";
 
-// ✅ Mock function to resolve the import error
+// Mock function to resolve the import error
 const getUser = () => {
-  // In a real application, this would come from an authentication context or API
-  // For now, we'll return a mock user object
   return { MID: 1, FirstName: "ระบบ", LastName: "แอดมิน" };
 };
 
@@ -94,11 +95,23 @@ const mapEvaluation = (d: any): BehaviorEvaluationRecord => {
 
 export default function BehaviorEvaluation() {
   const currentUser = getUser();
+  const [form] = Form.useForm<BehaviorEvaluationRecord>();
+  
+  // ✅ 2. Use notification hook
+  const [notify, contextHolder] = notification.useNotification();
+  
+  // ✅ 3. Create a toast helper
+  const toast = {
+    success: (msg: string, desc?: string) =>
+      notify.success({ message: msg, description: desc, placement: "bottomRight" }),
+    error: (msg: string, desc?: string) =>
+      notify.error({ message: msg, description: desc, placement: "bottomRight" }),
+  };
+
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
   const [prisoners, setPrisoners] = useState<Prisoner[]>([]);
   const [criteria, setCriteria] = useState<{ bId: number; criterion: string }[]>([]);
   const [members, setMembers] = useState<{ mId: number; firstName: string; lastName: string }[]>([]);
-  const [form] = Form.useForm<BehaviorEvaluationRecord>();
   const [data, setData] = useState<BehaviorEvaluationRecord[]>([]);
   const [filtered, setFiltered] = useState<BehaviorEvaluationRecord[]>([]);
   const [searchValue, setSearchValue] = useState("");
@@ -115,7 +128,7 @@ export default function BehaviorEvaluation() {
       setData(records);
       setFiltered(records);
     } catch {
-      message.error("โหลดข้อมูลการประเมินล้มเหลว");
+      toast.error("โหลดข้อมูลการประเมินล้มเหลว");
     }
   };
 
@@ -139,7 +152,7 @@ export default function BehaviorEvaluation() {
       })));
       await fetchEvaluations();
     } catch {
-      message.error("เกิดข้อผิดพลาดในการโหลดข้อมูลเริ่มต้น");
+      toast.error("เกิดข้อผิดพลาดในการโหลดข้อมูลเริ่มต้น");
     } finally {
       setLoading(false);
     }
@@ -203,16 +216,16 @@ export default function BehaviorEvaluation() {
       setLoading(true);
       if (isCreating) {
         await axios.post(`${BASE}/evaluations`, payload);
-        message.success("บันทึกข้อมูลเรียบร้อย");
+        toast.success("เพิ่มการประเมินสำเร็จ", "ข้อมูลถูกบันทึกในระบบเรียบร้อยแล้ว");
       } else {
         await axios.put(`${BASE}/evaluations/${editing!.id}`, payload);
-        message.success("แก้ไขข้อมูลเรียบร้อย");
+        toast.success("แก้ไขข้อมูลสำเร็จ", "ข้อมูลได้รับการปรับปรุงเรียบร้อยแล้ว");
       }
       setModalOpen(false);
       await fetchEvaluations();
     } catch (err: any) {
       const errorMessage = err?.response?.data?.error || "เกิดข้อผิดพลาดในการบันทึกข้อมูล";
-      message.error(errorMessage);
+      toast.error(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -223,10 +236,10 @@ export default function BehaviorEvaluation() {
     try {
       setLoading(true);
       await axios.delete(`${BASE}/evaluations/${id}`);
-      message.success("ลบข้อมูลเรียบร้อย");
+      toast.success("ลบข้อมูลเรียบร้อย");
       await fetchEvaluations();
     } catch {
-      message.error("ลบข้อมูลล้มเหลว");
+      toast.error("ลบข้อมูลล้มเหลว");
     } finally {
       setLoading(false);
     }
@@ -248,7 +261,7 @@ export default function BehaviorEvaluation() {
       const score = await fetchPrisonerScore(prisonerId);
       setCurrentPrisonerScore(typeof score === "number" ? score : null);
       if (score === null) {
-        message.error("ไม่สามารถโหลดคะแนนปัจจุบันของผู้ต้องขังได้");
+        toast.error("ไม่สามารถโหลดคะแนนปัจจุบันของผู้ต้องขังได้");
       }
     }
   };
@@ -314,39 +327,40 @@ export default function BehaviorEvaluation() {
   // ---------- UI ----------
   return (
     <div style={{ padding: 24, background: "#fff", minHeight: "100vh" }}>
+      {/* ✅ 4. Render the context holder */}
+      {contextHolder}
       
-        <Row justify="space-between" align="middle" style={{ marginBottom: 24 }}>
-          <Col>
-            <Title level={3} style={{ margin: 0 }}>บันทึกการประเมินพฤติกรรม</Title>
-            <Text type="secondary">จัดการข้อมูลการประเมินพฤติกรรมผู้ต้องขัง</Text>
-          </Col>
-          <Col>
-            <Space>
-              <Input
-                placeholder="ค้นหา รหัส, ชื่อ, ผู้ประเมิน"
-                allowClear
-                prefix={<SearchOutlined />}
-                value={searchValue}
-                onChange={(e) => setSearchValue(e.target.value)}
-                style={{ width: 260 }}
-              />
-              <Button type="primary" icon={<PlusOutlined />} onClick={openAdd}>
-                เพิ่มการประเมิน
-              </Button>
-            </Space>
-          </Col>
-        </Row>
+      <Row justify="space-between" align="middle" style={{ marginBottom: 24 }}>
+        <Col>
+          <Title level={3} style={{ margin: 0 }}>บันทึกการประเมินพฤติกรรม</Title>
+          <Text type="secondary">จัดการข้อมูลการประเมินพฤติกรรมผู้ต้องขัง</Text>
+        </Col>
+        <Col>
+          <Space>
+            <Input
+              placeholder="ค้นหา รหัส, ชื่อ, ผู้ประเมิน"
+              allowClear
+              prefix={<SearchOutlined />}
+              value={searchValue}
+              onChange={(e) => setSearchValue(e.target.value)}
+              style={{ width: 260 }}
+            />
+            <Button type="primary" icon={<PlusOutlined />} onClick={openAdd}>
+              เพิ่มการประเมิน
+            </Button>
+          </Space>
+        </Col>
+      </Row>
 
-        <Table
-          loading={loading}
-          columns={columns}
-          dataSource={filtered}
-          pagination={{ pageSize: 10, showSizeChanger: true }}
-          bordered
-          rowKey="key"
-        />
+      <Table
+        loading={loading}
+        columns={columns}
+        dataSource={filtered}
+        pagination={{ pageSize: 10, showSizeChanger: true }}
+        bordered
+        rowKey="key"
+      />
       
-
       <Modal
         title={editing ? "แก้ไขการประเมิน" : "เพิ่มการประเมิน"}
         open={modalOpen}
@@ -425,7 +439,7 @@ export default function BehaviorEvaluation() {
                   placeholder="เลือกผู้ประเมิน"
                   showSearch
                   optionFilterProp="children"
-                  disabled={!editing} // ✅ 4. ล็อกช่องนี้เมื่อเป็นการเพิ่มข้อมูล
+                  disabled={!editing}
                 >
                   {members.map((m) => (
                     <Option key={m.mId} value={m.mId}>{m.firstName} {m.lastName}</Option>
