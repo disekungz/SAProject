@@ -37,7 +37,6 @@ func SetupDatabase() {
 		&entity.Adjustment{},
 		&entity.Gender{},
 		&entity.ScoreBehavior{},
-		&entity.Doctor{},
 		&entity.Type{},
 		&entity.Status{},
 		&entity.Requesting{},
@@ -63,9 +62,6 @@ func SetupDatabase() {
 	db.FirstOrCreate(&entity.Rank{RankID: 1}, entity.Rank{RankID: 1, RankName: "แอดมิน"})
 	db.FirstOrCreate(&entity.Rank{RankID: 2}, entity.Rank{RankID: 2, RankName: "ผู้คุม"})
 	db.FirstOrCreate(&entity.Rank{RankID: 3}, entity.Rank{RankID: 3, RankName: "ญาติ"})
-
-	db.FirstOrCreate(&entity.Doctor{DoctorID: 1, DoctorName: "แพทย์หญิงสมศรี"})
-	db.FirstOrCreate(&entity.Doctor{DoctorID: 2, DoctorName: "แพทย์ชายสมชาย"})
 
 	db.FirstOrCreate(&entity.Operator{OperatorID: 1, OperatorName: "เพิ่ม"})
 	db.FirstOrCreate(&entity.Operator{OperatorID: 2, OperatorName: "เบิก"})
@@ -102,22 +98,6 @@ func SetupDatabase() {
 	db.FirstOrCreate(&entity.BehaviorCriterion{BID: 2, Criterion: "ดี"})
 	db.FirstOrCreate(&entity.BehaviorCriterion{BID: 3, Criterion: "ปานกลาง"})
 	db.FirstOrCreate(&entity.BehaviorCriterion{BID: 4, Criterion: "ต้องปรับปรุง"})
-
-	// Seed Activities
-	act1 := entity.Activity{Activity_ID: 9001, ActivityName: "งานไม้", Location: "โรงฝึก 1", Description: "ฝึกทักษะการทำเฟอร์นิเจอร์"}
-	act2 := entity.Activity{Activity_ID: 9002, ActivityName: "ภาษาอังกฤษ", Location: "ห้องเรียน 2", Description: "สอนภาษาอังกฤษเบื้องต้น"}
-	db.FirstOrCreate(&act1)
-	db.FirstOrCreate(&act2)
-
-	// Seed Schedules
-	schedule1 := entity.ActivitySchedule{Schedule_ID: 6001, Activity_ID: 9001, MID: 1, Max: 10, StartDate: time.Now(), EndDate: time.Now().AddDate(0, 0, 5), StartTime: "09:00:00", EndTime: "12:00:00"}
-	schedule2 := entity.ActivitySchedule{Schedule_ID: 6002, Activity_ID: 9002, MID: 2, Max: 15, StartDate: time.Now().AddDate(0, 0, 7), EndDate: time.Now().AddDate(0, 1, 7), StartTime: "13:00:00", EndTime: "15:00:00"}
-	db.FirstOrCreate(&schedule1)
-	db.FirstOrCreate(&schedule2)
-
-	// Seed Enrollments
-	db.FirstOrCreate(&entity.Enrollment{Enrollment_ID: 1, Schedule_ID: 6001, Prisoner_ID: 101, EnrollDate: time.Now(), Status: 1})
-	db.FirstOrCreate(&entity.Enrollment{Enrollment_ID: 2, Schedule_ID: 6002, Prisoner_ID: 102, EnrollDate: time.Now(), Status: 1})
 
 	relationships := []entity.Relationship{
 		{Relationship_name: "พ่อ"},
