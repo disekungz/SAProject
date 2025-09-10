@@ -9,6 +9,7 @@ import { useNavigate, Link as RouterLink } from "react-router-dom";
 export default function RegisterPage() {
   const nav = useNavigate();
 
+  // --- ⭐️ 1. เพิ่ม citizenId เข้าไปใน state ของฟอร์ม ---
   const [form, setForm] = useState({
     username: "",
     password: "",
@@ -16,6 +17,7 @@ export default function RegisterPage() {
     firstName: "",
     lastName: "",
     birthday: new Date().toISOString().slice(0, 10), // YYYY-MM-DD
+    citizenId: "", // <--- เพิ่มที่นี่
   });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -29,11 +31,11 @@ export default function RegisterPage() {
     e.preventDefault();
     setError(null);
 
-    // validate ง่าย ๆ
-    const required = ["username","password","email","firstName","lastName","birthday"] as const;
+    // --- ⭐️ 2. เพิ่ม citizenId เข้าไปใน validation ---
+    const required = ["username","password","email","firstName","lastName","birthday", "citizenId"] as const;
     for (const k of required) {
       if (!String(form[k]).trim()) {
-        setError("กรุณากรอกข้อมูลให้ครบ");
+        setError("กรุณากรอกข้อมูลให้ครบทุกช่อง");
         return;
       }
     }
@@ -41,17 +43,22 @@ export default function RegisterPage() {
       setError("รหัสผ่านอย่างน้อย 6 ตัวอักษร");
       return;
     }
+    if (form.citizenId.trim().length !== 13) {
+        setError("เลขบัตรประชาชนต้องมี 13 หลัก");
+        return;
+    }
 
     try {
       setSubmitting(true);
-      // ไม่ส่ง rankId — ให้ backend ตั้งเป็น “ญาติ” หรือยกระดับจากอีเมลเจ้าหน้าที่อัตโนมัติ
+      // --- ⭐️ 3. เพิ่ม citizenId เข้าไปใน payload ที่ส่งให้ backend ---
       await api.post("/auth/register", {
         username: form.username.trim(),
         password: form.password,
         email: form.email.trim(),
         firstName: form.firstName.trim(),
         lastName: form.lastName.trim(),
-        birthday: form.birthday, // YYYY-MM-DD / RFC3339 ได้
+        birthday: form.birthday,
+        citizenId: form.citizenId.trim(), // <--- เพิ่มที่นี่
       });
       nav("/login", { replace: true });
     } catch (e: any) {
@@ -69,11 +76,9 @@ export default function RegisterPage() {
         minHeight: "100vh",
         display: "grid",
         placeItems: "center",
-        // ✅ ใส่รูปพื้นหลังจาก public
         backgroundImage: 'url(/images/register-bg.jpg)',
         backgroundSize: "cover",
         backgroundPosition: "center",
-        // ม่านทึบให้ตัวอักษรอ่านง่าย
         "&::after": {
           content: '""',
           position: "absolute",
@@ -90,7 +95,6 @@ export default function RegisterPage() {
           width: { xs: "92%", sm: 440 },
           p: 4,
           borderRadius: 3,
-          // ❄️ glassmorphism
           background: "rgba(255,255,255,0.12)",
           border: "1px solid rgba(255,255,255,0.25)",
           backdropFilter: "blur(10px)",
@@ -130,6 +134,16 @@ export default function RegisterPage() {
             fullWidth label="Email" type="email" margin="dense"
             value={form.email} onChange={onChange("email")} required
             variant="filled"
+            InputProps={{ disableUnderline: true }}
+            sx={{ bgcolor: "rgba(255,255,255,.9)", borderRadius: 1 }}
+          />
+
+          {/* --- ⭐️ 4. เพิ่ม TextField สำหรับ Citizen ID --- */}
+          <TextField
+            fullWidth label="เลขบัตรประชาชน (Citizen ID)" margin="dense"
+            value={form.citizenId} onChange={onChange("citizenId")} required
+            variant="filled"
+            inputProps={{ maxLength: 13 }}
             InputProps={{ disableUnderline: true }}
             sx={{ bgcolor: "rgba(255,255,255,.9)", borderRadius: 1 }}
           />
@@ -180,3 +194,5 @@ export default function RegisterPage() {
     </Box>
   );
 }
+
+
