@@ -59,6 +59,7 @@ func main() {
 		api.POST("/parcels/:id/add", controller.AddParcel)
 		api.POST("/parcels/:id/reduce", controller.ReduceParcel)
 		api.GET("/operations", controller.GetOperations)
+	    api.DELETE("/parcels/:id", controller.DeleteParcel)
 
 		// --- Room, Work & Requesting Routes ---
 		api.GET("/rooms", controller.GetRooms)
