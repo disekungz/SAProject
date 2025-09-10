@@ -59,7 +59,7 @@ const generateUnique3DigitID = (existing: number[]) => {
   return generateRandomStaffID();
 };
 
-const statusMap: Record<WorkStatus, { color: string; text: string }> = {
+const statusMap: Record<WorkStatus, { color: string; text: WorkStatus }> = {
   "ทำงานอยู่": { color: "success", text: "ทำงานอยู่" },
   "ไม่ได้ทำงาน": { color: "error", text: "ไม่ได้ทำงาน" },
 };
@@ -108,6 +108,7 @@ const getGenderText = (r: Staff, genders: Gender[]) => {
  * =======================*/
 export default function StaffManagement() {
   const [form] = Form.useForm<Staff>();
+  const [msg, contextHolder] = message.useMessage(); // ✅ ใช้ message.useMessage
 
   // Data states
   const [staffs, setStaffs] = useState<Staff[]>([]);
@@ -153,7 +154,7 @@ export default function StaffManagement() {
 
       setStaffs(normalized);
     } catch {
-      message.error("โหลดข้อมูลเจ้าหน้าที่ไม่สำเร็จ");
+      msg.error("โหลดข้อมูลเจ้าหน้าที่ไม่สำเร็จ");
     } finally {
       setLoading(prev => ({ ...prev, table: false }));
     }
@@ -169,13 +170,14 @@ export default function StaffManagement() {
       }));
       setGenders(cleaned);
     } catch {
-      message.error("โหลดข้อมูลเพศไม่สำเร็จ");
+      msg.error("โหลดข้อมูลเพศไม่สำเร็จ");
     }
   };
 
   useEffect(() => {
     fetchStaffs();
     fetchGenders();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /* ---------- Derived Data (Memoized) ---------- */
@@ -205,7 +207,7 @@ export default function StaffManagement() {
 
   const resetFilters = () => {
     setFilters({ query: "", gender: undefined, status: undefined });
-    message.success("ล้างตัวกรองทั้งหมดแล้ว");
+    msg.success("ล้างตัวกรองทั้งหมดแล้ว");
   };
 
   const openModal = (staff: Staff | null) => {
@@ -228,10 +230,10 @@ export default function StaffManagement() {
   const handleDelete = async (id: number) => {
     try {
       await axios.delete(`${API_BASE}/staffs/${id}`);
-      message.success("ลบข้อมูลสำเร็จ");
+      msg.success("ลบข้อมูลสำเร็จ");
       fetchStaffs();
     } catch {
-      message.error("ลบข้อมูลไม่สำเร็จ");
+      msg.error("ลบข้อมูลไม่สำเร็จ");
     }
   };
 
@@ -242,7 +244,7 @@ export default function StaffManagement() {
       if (isEditing) {
         const payload = toPayload(values);
         await axios.put(`${API_BASE}/staffs/${modal.data?.StaffID}`, payload);
-        message.success("แก้ไขข้อมูลสำเร็จ");
+        msg.success("แก้ไขข้อมูลสำเร็จ");
       } else {
         const basePayload = toPayload(values);
         const finalPayload = {
@@ -251,13 +253,15 @@ export default function StaffManagement() {
         };
 
         await axios.post(`${API_BASE}/staffs`, finalPayload);
-        message.success("เพิ่มเจ้าหน้าที่ใหม่สำเร็จ");
+        // 🔔 แจ้งเตือนทันทีหลังเพิ่ม
+        msg.success("เพิ่มข้อมูลเจ้าหน้าที่สำเร็จ");
       }
+
+      await fetchStaffs();
       closeModal();
-      fetchStaffs();
     } catch (e: any) {
-      const msg = e?.response?.data?.error ?? "บันทึกข้อมูลไม่สำเร็จ";
-      message.error(msg);
+      const msgText = e?.response?.data?.error ?? "บันทึกข้อมูลไม่สำเร็จ";
+      msg.error(msgText);
     } finally {
       setLoading(prev => ({ ...prev, submit: false }));
     }
@@ -363,6 +367,8 @@ export default function StaffManagement() {
   /* ---------- Render ---------- */
   return (
     <div style={LAYOUT.page}>
+      {contextHolder} {/* ✅ ต้องมีเพื่อให้ toast โผล่แน่นอน */}
+
       {/* Header */}
       <Row justify="space-between" align="middle" style={{ marginBottom: 16 }}>
         <Col>
