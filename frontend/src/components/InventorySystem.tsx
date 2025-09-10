@@ -2,10 +2,10 @@
 import React, { useState, useEffect } from 'react';
 import {
   TextField, Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
-  Paper, Box, Button, Select, MenuItem, InputLabel, FormControl, Typography, CircularProgress
+  Paper, Box, Button, Select, MenuItem, InputLabel, FormControl, Typography,
+  CircularProgress, Snackbar, Alert
 } from '@mui/material';
 import { api } from '../lib/axios'; // ✅ ใช้ instance ที่แนบ Authorization ให้อัตโนมัติ
-
 
 const InventorySystem: React.FC = () => {
   const [parcels, setParcels] = useState<any[]>([]);
@@ -21,6 +21,17 @@ const InventorySystem: React.FC = () => {
   const [formData, setFormData] = useState({ name: '', quantity: 0, typeId: 1 });
   const [searchName, setSearchName] = useState('');
   const [searchTypeId, setSearchTypeId] = useState<number | null>(null);
+
+  // === Snackbar (แจ้งเตือน) ===
+  const [snackbar, setSnackbar] = useState<{
+    open: boolean;
+    message: string;
+    severity: 'success' | 'error' | 'warning' | 'info';
+  }>({ open: false, message: '', severity: 'success' });
+
+  const showSnackbar = (message: string, severity: 'success' | 'error' | 'warning' | 'info' = 'info') =>
+    setSnackbar({ open: true, message, severity });
+  const closeSnackbar = () => setSnackbar(s => ({ ...s, open: false }));
 
   // === Requestings (อนุมัติ) ===
   const [showApprovedPanel, setShowApprovedPanel] = useState(false);
@@ -67,6 +78,7 @@ const InventorySystem: React.FC = () => {
       .catch((e) => {
         console.error(e);
         setError('โหลดข้อมูลไม่สำเร็จ');
+        showSnackbar('โหลดข้อมูลไม่สำเร็จ', 'error');
       });
   }, []);
 
@@ -90,7 +102,9 @@ const InventorySystem: React.FC = () => {
     try {
       const logs = await api.get(`/operations`);
       setOperationLogs(logs.data);
-    } catch { }
+    } catch {
+      // เงียบๆ
+    }
   };
 
   /** ================= Helpers สำหรับ Requestings ================= */
@@ -173,6 +187,7 @@ const InventorySystem: React.FC = () => {
       console.error(e);
       setError('ไม่สามารถโหลดรายการขอเบิกที่อนุมัติได้');
       setApprovedRequests([]);
+      showSnackbar('ไม่สามารถโหลดรายการขอเบิกที่อนุมัติได้', 'error');
     } finally {
       setLoadingRequests(false);
     }
@@ -188,6 +203,7 @@ const InventorySystem: React.FC = () => {
     try {
       await api.put(`/requestings/${req.Requesting_ID}/status`, { Status_ID: 4 });
       setApprovedRequests(prev => prev.filter(r => r.Requesting_ID !== req.Requesting_ID));
+      showSnackbar('อัปเดตสถานะคำขอเบิกเป็น "สำเร็จ" แล้ว', 'success');
 
       try {
         const [pRes, oRes] = await Promise.all([
@@ -196,51 +212,76 @@ const InventorySystem: React.FC = () => {
         ]);
         setParcels(pRes.data);
         setOperationLogs(oRes.data);
-      } catch { }
+      } catch { /* เงียบๆ */ }
     } catch (e: any) {
       console.error(e);
-      setError(e?.response?.data?.error || 'อัปเดตสถานะคำขอเบิกไม่สำเร็จ');
+      const msg = e?.response?.data?.error || 'อัปเดตสถานะคำขอเบิกไม่สำเร็จ';
+      setError(msg);
+      showSnackbar(msg, 'error');
     }
   };
 
   /** ================= CRUD Parcel ================= */
+  const nameNormalized = (s: string) => s.trim().toLowerCase();
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!action) return;
+
+    const name = formData.name.trim();
+    if (!name) {
+      showSnackbar('กรุณากรอกชื่อพัสดุ', 'warning');
+      return;
+    }
 
     try {
       let res: any;
 
       if (action === 'addnew') {
-        if (parcels.some(p => (p.ParcelName ?? '').trim() === formData.name.trim())) {
-          setError('พัสดุนี้มีอยู่แล้ว');
+        // ✅ กันชื่อซ้ำแบบไม่สนตัวพิมพ์และเว้นวรรค
+        const exists = parcels.some(p => nameNormalized(p.ParcelName ?? '') === nameNormalized(name));
+        if (exists) {
+          showSnackbar('พัสดุนี้มีอยู่แล้ว', 'warning');
           return;
         }
         res = await api.post(`/parcels`, {
-          parcelName: formData.name,
+          parcelName: name,
           quantity: formData.quantity,
           type_ID: formData.typeId,
         });
         setParcels(prev => [...prev, res.data]);
+        showSnackbar('เพิ่มพัสดุใหม่สำเร็จ', 'success');
       }
 
       if (action === 'edit' && currentParcel) {
+        // ✅ กันชื่อซ้ำ (ยกเว้นตัวเอง)
+        const dup = parcels.some(
+          p => p.PID !== currentParcel.PID &&
+               nameNormalized(p.ParcelName ?? '') === nameNormalized(name)
+        );
+        if (dup) {
+          showSnackbar('ชื่อพัสดุนี้มีอยู่แล้ว', 'warning');
+          return;
+        }
         res = await api.put(`/parcels/${currentParcel.PID}`, {
-          parcelName: formData.name,
+          parcelName: name,
           quantity: formData.quantity,
           type_ID: formData.typeId,
         });
         setParcels(prev => prev.map(p => (p.PID === res.data.PID ? res.data : p)));
+        showSnackbar('แก้ไขพัสดุสำเร็จ', 'success');
       }
 
       if (action === 'add' && currentParcel) {
         res = await api.post(`/parcels/${currentParcel.PID}/add`, { amount: formData.quantity });
         setParcels(prev => prev.map(p => (p.PID === res.data.PID ? res.data : p)));
+        showSnackbar('เพิ่มจำนวนสำเร็จ', 'success');
       }
 
       if (action === 'reduce' && currentParcel) {
         res = await api.post(`/parcels/${currentParcel.PID}/reduce`, { amount: formData.quantity });
         setParcels(prev => prev.map(p => (p.PID === res.data.PID ? res.data : p)));
+        showSnackbar('เบิก/ลดจำนวนสำเร็จ', 'success');
       }
 
       await refreshLogs();
@@ -248,7 +289,9 @@ const InventorySystem: React.FC = () => {
       setError(null);
     } catch (err: any) {
       console.error(err);
-      setError(err?.response?.data?.error || 'เกิดข้อผิดพลาดในการดำเนินการ');
+      const msg = err?.response?.data?.error || 'เกิดข้อผิดพลาดในการดำเนินการ';
+      setError(msg);
+      showSnackbar(msg, 'error');
     }
   };
 
@@ -259,12 +302,12 @@ const InventorySystem: React.FC = () => {
       (searchTypeId === null || p.Type_ID === searchTypeId),
     )
     .sort((a, b) => a.PID - b.PID);
-  // ด้านบนก่อน return
+
+  // จัดเรียงประวัติการดำเนินการล่าสุดอยู่บน
   const ts = (v: any) => {
     const t = new Date(v ?? "").getTime();
     return Number.isNaN(t) ? 0 : t;
   };
-
   const sortedOperationLogs = React.useMemo(
     () =>
       [...operationLogs].sort(
@@ -272,7 +315,6 @@ const InventorySystem: React.FC = () => {
       ),
     [operationLogs]
   );
-
 
   return (
     <div className="p-4">
@@ -547,6 +589,18 @@ const InventorySystem: React.FC = () => {
           </TableContainer>
         </Box>
       )}
+
+      {/* ✅ Snackbar แจ้งเตือน */}
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={3000}
+        onClose={closeSnackbar}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+      >
+        <Alert onClose={closeSnackbar} severity={snackbar.severity} sx={{ width: '100%' }}>
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
     </div>
   );
 };
