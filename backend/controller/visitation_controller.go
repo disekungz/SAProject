@@ -2,10 +2,12 @@ package controller
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/sa-project/configs"
 	"github.com/sa-project/entity"
+	"gorm.io/gorm"
 )
 
 // Payload ที่จะรับจาก Frontend
@@ -23,16 +25,38 @@ type VisitationInput struct {
 
 // -------------------- GET --------------------
 func GetVisitations(c *gin.Context) {
+	rankId, _ := c.Get("rankId")
+	citizenId, _ := c.Get("citizenId")
+
 	var items []entity.Visitation
-	configs.DB().
+	query := configs.DB().
 		Preload("Inmate").
 		Preload("Visitor").
 		Preload("Staff").
 		Preload("Status").
 		Preload("Relationship").
 		Preload("TimeSlot").
-		Order("created_at desc").
-		Find(&items)
+		Order("visit_date desc")
+
+	// ถ้าเป็นญาติ (Rank ID = 3) ให้กรองข้อมูล
+	if rankId == uint(3) {
+		var visitor entity.Visitor
+		// ค้นหา visitor จาก citizenId ของคนที่ login
+		configs.DB().Where("citizen_id = ?", citizenId).First(&visitor)
+
+		if visitor.ID > 0 {
+			query = query.Where("visitor_id = ?", visitor.ID)
+		} else {
+			// ถ้าไม่เจอ visitor ที่ตรงกัน ก็ไม่ต้องแสดงข้อมูล
+			c.JSON(http.StatusOK, []entity.Visitation{})
+			return
+		}
+	}
+
+	if err := query.Find(&items).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get visitations"})
+		return
+	}
 
 	c.JSON(http.StatusOK, items)
 }
@@ -45,9 +69,14 @@ func CreateVisitation(c *gin.Context) {
 		return
 	}
 
+	visitDate, err := time.Parse("2006-01-02", input.Visit_Date)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid date format. Please use YYYY-MM-DD."})
+		return
+	}
+
 	tx := configs.DB().Begin()
 
-	// หรือตรวจสอบผู้เยี่ยมชมจาก Citizen_ID
 	var visitor entity.Visitor
 	visitorData := entity.Visitor{
 		FirstName:  input.VisitorFirstName,
@@ -61,18 +90,21 @@ func CreateVisitation(c *gin.Context) {
 		return
 	}
 
-	// ตรวจสอบการจองซ้ำซ้อน
 	var existingVisit entity.Visitation
-	if err := tx.Where("visit_date = ? AND time_slot_id = ?", input.Visit_Date, input.TimeSlot_ID).
-		First(&existingVisit).Error; err == nil {
+	err = tx.Where("visit_date = ? AND time_slot_id = ?", visitDate, input.TimeSlot_ID).First(&existingVisit).Error
+	if err == nil {
 		tx.Rollback()
-		c.JSON(http.StatusConflict, gin.H{"error": "Time slot already booked"})
+		c.JSON(http.StatusConflict, gin.H{"error": "Time slot already booked for this date"})
+		return
+	}
+	if err != gorm.ErrRecordNotFound {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error during booking check"})
 		return
 	}
 
-	// บันทึกการเยี่ยมใหม่
 	item := entity.Visitation{
-		Visit_Date:      input.Visit_Date,
+		Visit_Date:      visitDate,
 		TimeSlot_ID:     &input.TimeSlot_ID,
 		Staff_ID:        &input.Staff_ID,
 		Status_ID:       &input.Status_ID,
@@ -99,15 +131,33 @@ func UpdateVisitation(c *gin.Context) {
 		return
 	}
 
+	rankId, _ := c.Get("rankId")
+	citizenId, _ := c.Get("citizenId")
+
+	// --- ตรวจสอบสิทธิ์ ---
+	if rankId == uint(3) {
+		var visitor entity.Visitor
+		configs.DB().Where("citizen_id = ?", citizenId).First(&visitor)
+		if item.Visitor_ID != nil && *item.Visitor_ID != visitor.ID {
+			c.JSON(http.StatusForbidden, gin.H{"error": "You are not allowed to edit this record"})
+			return
+		}
+	}
+
 	var input VisitationInput
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
 		return
 	}
 
+	visitDate, err := time.Parse("2006-01-02", input.Visit_Date)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid date format. Please use YYYY-MM-DD."})
+		return
+	}
+
 	tx := configs.DB().Begin()
 
-	// อัปเดต Visitor
 	var visitor entity.Visitor
 	visitorData := entity.Visitor{
 		FirstName:  input.VisitorFirstName,
@@ -121,17 +171,20 @@ func UpdateVisitation(c *gin.Context) {
 		return
 	}
 
-	// ตรวจสอบการจองซ้ำ ยกเว้นตัวเอง
 	var existingVisit entity.Visitation
-	if err := tx.Where("id <> ? AND visit_date = ? AND time_slot_id = ?", id, input.Visit_Date, input.TimeSlot_ID).
-		First(&existingVisit).Error; err == nil {
+	err = tx.Where("id <> ? AND visit_date = ? AND time_slot_id = ?", id, visitDate, input.TimeSlot_ID).First(&existingVisit).Error
+	if err == nil {
 		tx.Rollback()
-		c.JSON(http.StatusConflict, gin.H{"error": "Time slot already booked"})
+		c.JSON(http.StatusConflict, gin.H{"error": "Time slot already booked for this date"})
+		return
+	}
+	if err != gorm.ErrRecordNotFound {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error during booking check"})
 		return
 	}
 
-	// อัปเดตข้อมูล
-	item.Visit_Date = input.Visit_Date
+	item.Visit_Date = visitDate
 	item.TimeSlot_ID = &input.TimeSlot_ID
 	item.Inmate_ID = &input.Inmate_ID
 	item.Staff_ID = &input.Staff_ID
@@ -152,9 +205,29 @@ func UpdateVisitation(c *gin.Context) {
 // -------------------- DELETE --------------------
 func DeleteVisitation(c *gin.Context) {
 	id := c.Param("id")
+	var item entity.Visitation
+	if err := configs.DB().First(&item, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Visitation not found"})
+		return
+	}
+
+	rankId, _ := c.Get("rankId")
+	citizenId, _ := c.Get("citizenId")
+
+	// --- ตรวจสอบสิทธิ์ ---
+	if rankId == uint(3) {
+		var visitor entity.Visitor
+		configs.DB().Where("citizen_id = ?", citizenId).First(&visitor)
+		if item.Visitor_ID != nil && *item.Visitor_ID != visitor.ID {
+			c.JSON(http.StatusForbidden, gin.H{"error": "You are not allowed to delete this record"})
+			return
+		}
+	}
+
 	if err := configs.DB().Delete(&entity.Visitation{}, id).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete visitation"})
 		return
 	}
-	c.Status(http.StatusNoContent)
+	c.JSON(http.StatusOK, gin.H{"message": "Visitation deleted successfully"})
 }
+
