@@ -22,7 +22,7 @@ import {
 import { SearchOutlined, EditOutlined, DeleteOutlined, PlusOutlined } from "@ant-design/icons";
 import axios from "axios";
 import dayjs, { Dayjs } from "dayjs";
-import { getUser } from "../lib/auth";
+import { getUser } from "../lib/auth"; // <- ใช้ getUser() จาก auth.ts
 
 const { Title } = Typography;
 const { Option } = Select;
@@ -72,7 +72,9 @@ interface VisitationForm {
 export default function Visition() {
   const { token: { colorBgContainer, borderRadiusLG } } = theme.useToken();
 
+  // อ่าน user ที่ login (จาก localStorage ตาม auth.ts)
   const currentUser = getUser();
+  // ตาม comment ใน register.tsx backend ตั้งค่า default ญาติ เป็น rankId = 3 (ปรับถ้าของคุณต่างไป)
   const isVisitor = currentUser?.rankId === 3;
 
   const [visitations, setVisitations] = useState<Visitation[]>([]);
@@ -183,6 +185,7 @@ export default function Visition() {
     form.resetFields();
     setEditing(null);
     setBookedSlots([]);
+    // ถ้าเป็นญาติ ให้ตั้งค่า default สถานะเป็น "รอดำเนินการ" (ถ้าต้องการ)
     if (isVisitor) {
       const pending = statuses.find(s => s.Status === "รอดำเนินการ");
       if (pending) form.setFieldsValue({ Status_ID: pending.Status_ID });
@@ -245,32 +248,8 @@ export default function Visition() {
   const onFinish = async (values: VisitationForm) => {
     setLoading(true);
     try {
-      // ตรวจสอบเลขบัตรซ้ำ
-      const isDuplicateCitizenID = visitations.some(
-        v => v.Visitor?.Citizen_ID === values.VisitorCitizenID && v.ID !== editing?.ID
-      );
-      if (isDuplicateCitizenID) {
-        message.error("เลขบัตรประชาชนนี้ถูกใช้งานแล้ว");
-        setLoading(false);
-        return;
-      }
-
-      // ตรวจสอบเยี่ยมซ้ำวันเดียวกัน
-      const selectedDate = values.Visit_Date?.format("YYYY-MM-DD");
-      const alreadyVisited = visitations.some(
-        v =>
-          v.Visitor?.Citizen_ID === values.VisitorCitizenID &&
-          dayjs(v.Visit_Date).format("YYYY-MM-DD") === selectedDate &&
-          v.ID !== editing?.ID
-      );
-      if (alreadyVisited) {
-        message.error("ผู้มาเยี่ยมคนนี้มีการเยี่ยมในวันเดียวกันแล้ว");
-        setLoading(false);
-        return;
-      }
-
       const payload = {
-        Visit_Date: selectedDate,
+        Visit_Date: values.Visit_Date?.format("YYYY-MM-DD"),
         TimeSlot_ID: values.TimeSlot_ID,
         Inmate_ID: values.Inmate_ID,
         Relationship_ID: values.Relationship_ID,
@@ -278,9 +257,10 @@ export default function Visition() {
         Status_ID: values.Status_ID,
         VisitorFirstName: values.VisitorFirstName,
         VisitorLastName: values.VisitorLastName,
-        VisitorCitizenID: values.VisitorCitizenID,
+        VisitorCitizenID: values.VisitorCitizenID || `AUTO-${Date.now()}`,
       };
 
+      // บังคับถ้าเป็นญาติแล้วพยายามส่งสถานะไม่ใช่ "รอดำเนินการ" -> เปลี่ยนกลับ
       if (isVisitor) {
         const pending = statuses.find(s => s.Status === "รอดำเนินการ");
         if (pending) payload.Status_ID = pending.Status_ID;
@@ -323,7 +303,7 @@ export default function Visition() {
     switch (statusName) {
       case "อนุมัติ": return <Tag color="green">อนุมัติ</Tag>;
       case "ปฏิเสธ": case "ไม่อนุมัติ": return <Tag color="red">ปฏิเสธ</Tag>;
-      case "รอดำเนินการ": return <Tag color="blue">รอดำเนินการ</Tag>;
+      case "รอดำเนินการ": case "รอ...": return <Tag color="blue">รอดำเนินการ</Tag>;
       case "สำเร็จ": return <Tag color="purple">สำเร็จ</Tag>;
       default: return <Tag>{statusName || "ไม่ระบุ"}</Tag>;
     }
@@ -416,16 +396,8 @@ export default function Visition() {
               </Form.Item>
             </Col>
             <Col span={8}>
-              <Form.Item
-                label="เลขบัตรประชาชน"
-                name="VisitorCitizenID"
-                rules={[
-                  { required: true, message: "กรุณากรอกเลขบัตรประชาชน" },
-                  { len: 13, message: "เลขบัตรประชาชนต้องมี 13 หลัก" },
-                  { pattern: /^[0-9]+$/, message: "เลขบัตรประชาชนต้องเป็นตัวเลขเท่านั้น" },
-                ]}
-              >
-                <Input maxLength={13} placeholder="เลขบัตรประชาชน 13 หลัก" />
+              <Form.Item label="เลขบัตรประชาชน" name="VisitorCitizenID" rules={[{ required: true, message: "กรุณากรอกเลขบัตรประชาชน" }]}>
+                <Input placeholder="เลขบัตรประชาชน" />
               </Form.Item>
             </Col>
 
@@ -438,48 +410,56 @@ export default function Visition() {
             </Col>
             <Col span={12}>
               <Form.Item label="เจ้าหน้าที่" name="Staff_ID" rules={[{ required: true, message: "กรุณาเลือกเจ้าหน้าที่" }]}>
-                <Select placeholder="เลือกเจ้าหน้าที่">
+                <Select showSearch filterOption={(input, option) => String(option?.children).toLowerCase().includes(input.toLowerCase())} placeholder="เลือกเจ้าหน้าที่">
                   {staffs.map(s => <Option key={s.StaffID} value={s.StaffID}>{s.FirstName} {s.LastName}</Option>)}
                 </Select>
               </Form.Item>
             </Col>
-            {!isVisitor && (
-              <Col span={12}>
-                <Form.Item label="สถานะ" name="Status_ID" rules={[{ required: true, message: "กรุณาเลือกสถานะ" }]}>
-                  <Select placeholder="เลือกสถานะ">
-                    {statuses.map(s => <Option key={s.Status_ID} value={s.Status_ID}>{s.Status}</Option>)}
-                  </Select>
-                </Form.Item>
-              </Col>
-            )}
+
+            <Col span={24}>
+              <Form.Item
+  label="สถานะ"
+  name="Status_ID"
+  rules={[{ required: true, message: "กรุณาเลือกสถานะ" }]}
+>
+  <Select placeholder="เลือกสถานะ">
+    {isVisitor
+      ? statuses
+          .filter(st => st.Status === "รอ...")   // <-- แก้ให้ตรงกับ DB
+          .map(st => (
+            <Option key={st.Status_ID} value={st.Status_ID}>
+              {st.Status}
+            </Option>
+          ))
+      : statuses.map(st => (
+          <Option key={st.Status_ID} value={st.Status_ID}>
+            {st.Status}
+          </Option>
+        ))}
+  </Select>
+</Form.Item>
+            </Col>
+
             <Col span={12}>
-              <Form.Item label="วันที่เยี่ยม" name="Visit_Date" rules={[{ required: true, message: "กรุณาเลือกวันที่" }]}>
-                <DatePicker
-                  format="DD/MM/YYYY"
-                  style={{ width: "100%" }}
-                  disabledDate={disabledWeekend}
-                  onChange={handleDateChange}
-                />
+              <Form.Item label="วันที่เยี่ยม" name="Visit_Date" rules={[{ required: true, message: "กรุณาเลือกวันที่เยี่ยม" }]}>
+                <DatePicker style={{ width: "100%" }} format="DD/MM/YYYY" onChange={handleDateChange} disabledDate={disabledWeekend} />
               </Form.Item>
             </Col>
             <Col span={12}>
               <Form.Item label="ช่วงเวลา" name="TimeSlot_ID" rules={[{ required: true, message: "กรุณาเลือกช่วงเวลา" }]}>
                 <Select placeholder="เลือกช่วงเวลา">
-                  {timeSlots.map(ts => (
-                    <Option key={ts.ID} value={ts.ID} disabled={bookedSlots.includes(ts.ID)}>
-                      {ts.TimeSlot_Name} {bookedSlots.includes(ts.ID) && "(เต็ม)"}
-                    </Option>
-                  ))}
+                  {timeSlots.map(ts => <Option key={ts.ID} value={ts.ID} disabled={bookedSlots.includes(ts.ID)}>{ts.TimeSlot_Name}</Option>)}
                 </Select>
               </Form.Item>
             </Col>
           </Row>
-          <Form.Item>
-            <Button type="primary" htmlType="submit" loading={loading} style={{ marginRight: 8 }}>
-              {editing ? "บันทึกการแก้ไข" : "เพิ่มการเยี่ยม"}
-            </Button>
-            <Button onClick={() => setOpen(false)}>ยกเลิก</Button>
-          </Form.Item>
+
+          <Row justify="end">
+            <Space>
+              <Button onClick={() => setOpen(false)}>ยกเลิก</Button>
+              <Button type="primary" htmlType="submit" loading={loading}>บันทึก</Button>
+            </Space>
+          </Row>
         </Form>
       </Modal>
     </Layout>
