@@ -9,7 +9,6 @@ import {
   Typography,
   Row,
   Col,
-  message,
   Table,
   Space,
   Modal,
@@ -18,6 +17,7 @@ import {
   Tag,
   Avatar,
   InputNumber,
+  notification, // ✅ ใช้ notification แทน message
 } from "antd";
 import {
   SearchOutlined,
@@ -49,13 +49,13 @@ interface MedicalHistory {
   MedicalID: number;
   Initial_symptoms: string;
   Diagnosis: string;
-  Medicine: number;           // อ้าง PID ของ Parcel
+  Medicine: number;
   MedicineAmount: number;
-  Date_Inspection: string;    // ISO string
+  Date_Inspection: string;
   Next_appointment?: string | null;
   Prisoner_ID: number;
   StaffID: number;
-  Doctor: string;             // ใช้ string แทนความสัมพันธ์
+  Doctor: string;
   Prisoner?: Prisoner;
   Staff?: Staff;
   Parcel?: Parcel;
@@ -71,7 +71,14 @@ const getRandomColor = (id: number) => {
 
 export default function PrisonerMedicalExam() {
   const [form] = Form.useForm();
-  const [msg, contextHolder] = message.useMessage(); // ✅ ให้ toast แสดงแน่นอน
+
+  // ✅ Notification bottom-right
+  const [notify, notifyHolder] = notification.useNotification();
+  const toast = {
+    success: (msg: string, desc?: string) => notify.success({ message: msg, description: desc, placement: "bottomRight" }),
+    error: (msg: string, desc?: string) => notify.error({ message: msg, description: desc, placement: "bottomRight" }),
+    info: (msg: string, desc?: string) => notify.info({ message: msg, description: desc, placement: "bottomRight" }),
+  };
 
   const [medicalHistories, setMedicalHistories] = useState<MedicalHistory[]>([]);
   const [prisoners, setPrisoners] = useState<Prisoner[]>([]);
@@ -82,7 +89,7 @@ export default function PrisonerMedicalExam() {
   const [modalOpen, setModalOpen] = useState(false);
   const [selected, setSelected] = useState<MedicalHistory | null>(null);
   const [loading, setLoading] = useState(false);
-  const [submitting, setSubmitting] = useState(false); // ✅ โหลดปุ่ม submit
+  const [submitting, setSubmitting] = useState(false);
 
   // 👉 เก็บสถานะหน้าปัจจุบัน/ขนาดหน้า เพื่อนับลำดับต่อหน้า
   const [tablePagination, setTablePagination] = useState({ current: 1, pageSize: 8 });
@@ -129,7 +136,7 @@ export default function PrisonerMedicalExam() {
       setParcels(parcelsData);
       setFiltered(mergedData);
     } catch (e) {
-      msg.error("ไม่สามารถโหลดข้อมูลได้");
+      toast.error("ไม่สามารถโหลดข้อมูลได้");
     } finally {
       setLoading(false);
     }
@@ -158,7 +165,7 @@ export default function PrisonerMedicalExam() {
   // --- Modal & Form ---
   const openAdd = () => {
     form.resetFields();
-    setSelected(null); // โหมดเพิ่ม
+    setSelected(null);
     setModalOpen(true);
   };
 
@@ -203,7 +210,7 @@ export default function PrisonerMedicalExam() {
     try {
       setSubmitting(true);
       await axios.post(`${API_URL}/medical_histories`, payload);
-      msg.success("เพิ่มข้อมูลการตรวจรักษาเรียบร้อย");
+      toast.success("เพิ่มข้อมูลการตรวจรักษาเรียบร้อย");
 
       // ✅ สร้างคำร้องเบิกยาเฉพาะตอนเพิ่ม
       try {
@@ -214,16 +221,16 @@ export default function PrisonerMedicalExam() {
           Request_Date: dayjs().format("YYYY-MM-DD"),
         };
         await axios.post(`${API_URL}/requestings`, requestingPayload);
-        msg.success("สร้างคำร้องเบิกยาเรียบร้อย");
+        toast.success("สร้างคำร้องเบิกยาเรียบร้อย");
       } catch {
-        msg.error("บันทึกการตรวจแล้ว แต่ไม่สามารถสร้างคำร้องเบิกได้");
+        toast.error("บันทึกการตรวจแล้ว แต่ไม่สามารถสร้างคำร้องเบิกได้");
       }
 
       setModalOpen(false);
       form.resetFields();
       fetchData();
     } catch {
-      msg.error("เกิดข้อผิดพลาดในการบันทึกข้อมูล");
+      toast.error("เกิดข้อผิดพลาดในการบันทึกข้อมูล");
     } finally {
       setSubmitting(false);
     }
@@ -232,10 +239,10 @@ export default function PrisonerMedicalExam() {
   const handleDelete = async (id: number) => {
     try {
       await axios.delete(`${API_URL}/medical_histories/${id}`);
-      msg.success("ลบข้อมูลเรียบร้อย");
+      toast.success("ลบข้อมูลเรียบร้อย");
       fetchData();
     } catch {
-      msg.error("เกิดข้อผิดพลาดในการลบข้อมูล");
+      toast.error("เกิดข้อผิดพลาดในการลบข้อมูล");
     }
   };
 
@@ -398,7 +405,8 @@ export default function PrisonerMedicalExam() {
 
   return (
     <div style={{ maxWidth: 1600, margin: "0 auto", padding: 20 }}>
-      {contextHolder}
+      {notifyHolder /* ✅ ต้องมีเพื่อให้ toast โผล่มุมขวาล่าง */}
+
       <Title level={2}>
         <MedicineBoxOutlined /> บันทึกการตรวจ/รักษาผู้ต้องขัง
       </Title>
