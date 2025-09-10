@@ -1,11 +1,12 @@
 import { useState, useEffect, useMemo } from "react";
 import {
-  Input, Button, Card, Form, DatePicker, Row, Col, Typography, message,
+  Input, Button, Card, Form, DatePicker, Row, Col, Typography,
   Select, Table, Space, Modal, Popconfirm, Tag, Empty, Avatar,
+  notification,  // ✅ ใช้ notification แทน message
 } from "antd";
 import {
-  SearchOutlined, EditOutlined, DeleteOutlined, PlusOutlined, UserOutlined,
-  ReloadOutlined, MailOutlined,
+  SearchOutlined, EditOutlined, DeleteOutlined, PlusOutlined,
+  UserOutlined, ReloadOutlined, MailOutlined,
 } from "@ant-design/icons";
 import axios from "axios";
 import dayjs, { Dayjs } from "dayjs";
@@ -17,10 +18,12 @@ const { Title, Text } = Typography;
  * Types
  * =======================*/
 type WorkStatus = "ทำงานอยู่" | "ไม่ได้ทำงาน";
+
 interface Gender {
   Gender_ID: number;
   Gender: string;
 }
+
 interface Staff {
   StaffID: number;
   Email?: string;
@@ -29,8 +32,8 @@ interface Staff {
   Birthday: string | Dayjs;
   Status: WorkStatus;
   Address: string;
-  Gender_ID: number;      // ทำให้เป็น number เสมอ (normalize ตอนดึง)
-  Gender?: any | null;    // รองรับหลายรูปแบบที่ backend อาจส่งมา
+  Gender_ID: number; // ทำให้เป็น number เสมอ (normalize ตอนดึง)
+  Gender?: any | null; // รองรับหลายรูปแบบที่ backend อาจส่งมา
 }
 
 /* =========================
@@ -76,7 +79,7 @@ const getAvatarColor = (seed: number) => {
 };
 
 // ✅ แปลงค่าใน payload ให้ตรงชนิด
-const toPayload = (formValues: Omit<Staff, 'StaffID'>) => ({
+const toPayload = (formValues: Omit<Staff, "StaffID">) => ({
   ...formValues,
   Gender_ID: Number((formValues as any).Gender_ID),
   Birthday: formValues.Birthday ? dayjs(formValues.Birthday).toISOString() : null,
@@ -97,9 +100,8 @@ const getGenderText = (r: Staff, genders: Gender[]) => {
   if (typeof fromObj === "string" && fromObj.trim()) return fromObj;
 
   const idNum = Number(r.Gender_ID);
-  const found = genders.find(g => Number(g.Gender_ID) === idNum);
+  const found = genders.find((g) => Number(g.Gender_ID) === idNum);
   if (found?.Gender) return found.Gender;
-
   return "-";
 };
 
@@ -108,7 +110,17 @@ const getGenderText = (r: Staff, genders: Gender[]) => {
  * =======================*/
 export default function StaffManagement() {
   const [form] = Form.useForm<Staff>();
-  const [msg, contextHolder] = message.useMessage(); // ✅ ใช้ message.useMessage
+
+  // ✅ ใช้ notification + helper ให้เด้งมุมขวาล่าง
+  const [notify, notifyHolder] = notification.useNotification();
+  const toast = {
+    success: (msg: string, desc?: string) =>
+      notify.success({ message: msg, description: desc, placement: "bottomRight" }),
+    error: (msg: string, desc?: string) =>
+      notify.error({ message: msg, description: desc, placement: "bottomRight" }),
+    info: (msg: string, desc?: string) =>
+      notify.info({ message: msg, description: desc, placement: "bottomRight" }),
+  };
 
   // Data states
   const [staffs, setStaffs] = useState<Staff[]>([]);
@@ -127,15 +139,16 @@ export default function StaffManagement() {
   });
 
   // Modal state
-  const [modal, setModal] = useState<{ open: boolean, data: Staff | null }>({
+  const [modal, setModal] = useState<{ open: boolean; data: Staff | null }>({
     open: false,
     data: null,
   });
+
   const isEditing = !!modal.data;
 
   /* ---------- Fetchers ---------- */
   const fetchStaffs = async () => {
-    setLoading(prev => ({ ...prev, table: true }));
+    setLoading((prev) => ({ ...prev, table: true }));
     try {
       const { data } = await axios.get(`${API_BASE}/staffs`);
       const list = Array.isArray(data) ? data : data?.data;
@@ -154,9 +167,9 @@ export default function StaffManagement() {
 
       setStaffs(normalized);
     } catch {
-      msg.error("โหลดข้อมูลเจ้าหน้าที่ไม่สำเร็จ");
+      toast.error("โหลดข้อมูลเจ้าหน้าที่ไม่สำเร็จ");
     } finally {
-      setLoading(prev => ({ ...prev, table: false }));
+      setLoading((prev) => ({ ...prev, table: false }));
     }
   };
 
@@ -170,7 +183,7 @@ export default function StaffManagement() {
       }));
       setGenders(cleaned);
     } catch {
-      msg.error("โหลดข้อมูลเพศไม่สำเร็จ");
+      toast.error("โหลดข้อมูลเพศไม่สำเร็จ");
     }
   };
 
@@ -184,7 +197,6 @@ export default function StaffManagement() {
   const filteredStaffs: Staff[] = useMemo(() => {
     const { query, gender, status } = filters;
     const q = query.trim().toLowerCase();
-
     if (!q && !gender && !status) return staffs;
 
     return staffs.filter((s) => {
@@ -202,12 +214,12 @@ export default function StaffManagement() {
 
   /* ---------- Handlers ---------- */
   const handleFilterChange = (key: keyof typeof filters, value: any) => {
-    setFilters(prev => ({ ...prev, [key]: value }));
+    setFilters((prev) => ({ ...prev, [key]: value }));
   };
 
   const resetFilters = () => {
     setFilters({ query: "", gender: undefined, status: undefined });
-    msg.success("ล้างตัวกรองทั้งหมดแล้ว");
+    toast.success("ล้างตัวกรองทั้งหมดแล้ว");
   };
 
   const openModal = (staff: Staff | null) => {
@@ -230,40 +242,37 @@ export default function StaffManagement() {
   const handleDelete = async (id: number) => {
     try {
       await axios.delete(`${API_BASE}/staffs/${id}`);
-      msg.success("ลบข้อมูลสำเร็จ");
+      toast.success("ลบข้อมูลสำเร็จ");
       fetchStaffs();
     } catch {
-      msg.error("ลบข้อมูลไม่สำเร็จ");
+      toast.error("ลบข้อมูลไม่สำเร็จ");
     }
   };
 
-  const onFinish = async (values: Omit<Staff, 'StaffID'>) => {
-    setLoading(prev => ({ ...prev, submit: true }));
-
+  const onFinish = async (values: Omit<Staff, "StaffID">) => {
+    setLoading((prev) => ({ ...prev, submit: true }));
     try {
       if (isEditing) {
         const payload = toPayload(values);
         await axios.put(`${API_BASE}/staffs/${modal.data?.StaffID}`, payload);
-        msg.success("แก้ไขข้อมูลสำเร็จ");
+        toast.success("แก้ไขข้อมูลสำเร็จ");
       } else {
         const basePayload = toPayload(values);
         const finalPayload = {
           ...basePayload,
-          StaffID: generateUnique3DigitID(staffs.map(s => s.StaffID)), // ✅ 3 หลัก & กันซ้ำหน้าบ้าน
+          StaffID: generateUnique3DigitID(staffs.map((s) => s.StaffID)), // ✅ 3 หลัก & กันซ้ำหน้าบ้าน
         };
-
         await axios.post(`${API_BASE}/staffs`, finalPayload);
         // 🔔 แจ้งเตือนทันทีหลังเพิ่ม
-        msg.success("เพิ่มข้อมูลเจ้าหน้าที่สำเร็จ");
+        toast.success("เพิ่มข้อมูลเจ้าหน้าที่สำเร็จ");
       }
-
       await fetchStaffs();
       closeModal();
     } catch (e: any) {
-      const msgText = e?.response?.data?.error ?? "บันทึกข้อมูลไม่สำเร็จ";
-      msg.error(msgText);
+      const errText = e?.response?.data?.error ?? "บันทึกข้อมูลไม่สำเร็จ";
+      toast.error(errText);
     } finally {
-      setLoading(prev => ({ ...prev, submit: false }));
+      setLoading((prev) => ({ ...prev, submit: false }));
     }
   };
 
@@ -284,7 +293,8 @@ export default function StaffManagement() {
             <br />
             {r.Email && (
               <Text type="secondary" style={{ fontSize: 12 }}>
-                <MailOutlined style={{ marginRight: 4 }}/> {r.Email}
+                <MailOutlined style={{ marginRight: 4 }} />
+                {r.Email}
               </Text>
             )}
           </div>
@@ -367,7 +377,7 @@ export default function StaffManagement() {
   /* ---------- Render ---------- */
   return (
     <div style={LAYOUT.page}>
-      {contextHolder} {/* ✅ ต้องมีเพื่อให้ toast โผล่แน่นอน */}
+      {notifyHolder /* ✅ ต้องมีเพื่อให้ toast โผล่มุมขวาล่าง */}
 
       {/* Header */}
       <Row justify="space-between" align="middle" style={{ marginBottom: 16 }}>
@@ -398,28 +408,38 @@ export default function StaffManagement() {
                 value={filters.query}
                 onChange={(e) => handleFilterChange("query", e.target.value)}
               />
+
               <Select<number>
                 allowClear
                 placeholder="กรองตามเพศ"
                 style={{ width: 150 }}
                 value={filters.gender}
                 onChange={(v) => handleFilterChange("gender", v)}
-                options={genders.map(g => ({ value: g.Gender_ID, label: g.Gender }))}
+                options={genders.map((g) => ({ value: g.Gender_ID, label: g.Gender }))}
               />
+
               <Select<WorkStatus>
                 allowClear
                 placeholder="กรองตามสถานะ"
                 style={{ width: 150 }}
                 value={filters.status}
                 onChange={(v) => handleFilterChange("status", v)}
-                options={Object.entries(statusMap).map(([_, val]) => ({ value: val.text as WorkStatus, label: val.text }))}
+                options={Object.entries(statusMap).map(([_, val]) => ({
+                  value: val.text as WorkStatus,
+                  label: val.text,
+                }))}
               />
             </Space>
           </Col>
-          <Col xs={24} md={8} style={{ textAlign: 'right' }}>
+
+          <Col xs={24} md={8} style={{ textAlign: "right" }}>
             <Space>
-              <Button icon={<ReloadOutlined />} onClick={resetFilters}>ล้างตัวกรอง</Button>
-              <Button onClick={fetchStaffs} loading={loading.table}>โหลดใหม่</Button>
+              <Button icon={<ReloadOutlined />} onClick={resetFilters}>
+                ล้างตัวกรอง
+              </Button>
+              <Button onClick={fetchStaffs} loading={loading.table}>
+                โหลดใหม่
+              </Button>
             </Space>
           </Col>
         </Row>
@@ -457,10 +477,12 @@ export default function StaffManagement() {
         width={720}
         centered
         footer={[
-          <Button key="back" onClick={closeModal}>ยกเลิก</Button>,
+          <Button key="back" onClick={closeModal}>
+            ยกเลิก
+          </Button>,
           <Button key="submit" type="primary" loading={loading.submit} onClick={() => form.submit()}>
             {isEditing ? "บันทึกการแก้ไข" : "เพิ่มข้อมูล"}
-          </Button>
+          </Button>,
         ]}
       >
         <Form form={form} layout="vertical" onFinish={onFinish}>
@@ -470,37 +492,46 @@ export default function StaffManagement() {
                 <Input placeholder="เช่น สมชาย" />
               </Form.Item>
             </Col>
+
             <Col xs={24} sm={12}>
               <Form.Item label="นามสกุล" name="LastName" rules={[{ required: true, message: "กรุณากรอกนามสกุล" }]}>
                 <Input placeholder="เช่น ใจดี" />
               </Form.Item>
             </Col>
+
             <Col xs={24} sm={12}>
               <Form.Item label="เพศ" name="Gender_ID" rules={[{ required: true, message: "กรุณาเลือกเพศ" }]}>
                 <Select<number>
                   placeholder="เลือกเพศ"
-                  options={genders.map(g => ({ value: g.Gender_ID, label: g.Gender }))}
+                  options={genders.map((g) => ({ value: g.Gender_ID, label: g.Gender }))}
                 />
               </Form.Item>
             </Col>
+
             <Col xs={24} sm={12}>
               <Form.Item label="วันเกิด" name="Birthday" rules={[{ required: true, message: "กรุณาเลือกวันเกิด" }]}>
                 <DatePicker style={{ width: "100%" }} format="DD/MM/YYYY" placeholder="เลือกวันเกิด" />
               </Form.Item>
             </Col>
+
             <Col xs={24} sm={12}>
               <Form.Item label="สถานะการทำงาน" name="Status" rules={[{ required: true, message: "กรุณาเลือกสถานะ" }]}>
                 <Select<WorkStatus>
                   placeholder="เลือกสถานะ"
-                  options={Object.entries(statusMap).map(([_, val]) => ({ value: val.text as WorkStatus, label: val.text }))}
+                  options={Object.entries(statusMap).map(([_, val]) => ({
+                    value: val.text as WorkStatus,
+                    label: val.text,
+                  }))}
                 />
               </Form.Item>
             </Col>
+
             <Col xs={24} sm={12}>
-              <Form.Item label="อีเมล" name="Email" rules={[{ type: 'email', message: 'รูปแบบอีเมลไม่ถูกต้อง' }]}>
+              <Form.Item label="อีเมล" name="Email" rules={[{ type: "email", message: "รูปแบบอีเมลไม่ถูกต้อง" }]}>
                 <Input type="email" placeholder="name@example.com" />
               </Form.Item>
             </Col>
+
             <Col xs={24}>
               <Form.Item label="ที่อยู่" name="Address">
                 <Input.TextArea rows={3} placeholder="รายละเอียดที่อยู่" />
