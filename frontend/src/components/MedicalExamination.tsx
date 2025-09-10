@@ -55,7 +55,7 @@ interface MedicalHistory {
   Next_appointment?: string | null;
   Prisoner_ID: number;
   StaffID: number;
-  Doctor: string;             // ← ใช้ string แทนความสัมพันธ์
+  Doctor: string;             // ใช้ string แทนความสัมพันธ์
   Prisoner?: Prisoner;
   Staff?: Staff;
   Parcel?: Parcel;
@@ -71,6 +71,8 @@ const getRandomColor = (id: number) => {
 
 export default function PrisonerMedicalExam() {
   const [form] = Form.useForm();
+  const [msg, contextHolder] = message.useMessage(); // ✅ ให้ toast แสดงแน่นอน
+
   const [medicalHistories, setMedicalHistories] = useState<MedicalHistory[]>([]);
   const [prisoners, setPrisoners] = useState<Prisoner[]>([]);
   const [staffs, setStaffs] = useState<Staff[]>([]);
@@ -80,6 +82,7 @@ export default function PrisonerMedicalExam() {
   const [modalOpen, setModalOpen] = useState(false);
   const [selected, setSelected] = useState<MedicalHistory | null>(null);
   const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false); // ✅ โหลดปุ่ม submit
 
   // 👉 เก็บสถานะหน้าปัจจุบัน/ขนาดหน้า เพื่อนับลำดับต่อหน้า
   const [tablePagination, setTablePagination] = useState({ current: 1, pageSize: 8 });
@@ -95,16 +98,29 @@ export default function PrisonerMedicalExam() {
         axios.get(`${API_URL}/parcels`),
       ]);
 
-      const medicalData: MedicalHistory[] = medicalRes.data || [];
-      const prisonerData: Prisoner[] = prisonerRes.data || [];
-      const staffsData: Staff[] = staffsRes.data || [];
-      const parcelsData: Parcel[] = (parcelsRes.data || []).filter((p: { Type_ID: number }) => p.Type_ID === 3);
+      const medicalRaw = Array.isArray(medicalRes.data) ? medicalRes.data : medicalRes.data?.data || [];
+      const prisonerData: Prisoner[] = Array.isArray(prisonerRes.data) ? prisonerRes.data : prisonerRes.data?.data || [];
+      const staffsData: Staff[] = Array.isArray(staffsRes.data) ? staffsRes.data : staffsRes.data?.data || [];
+      const parcelsData: Parcel[] = (Array.isArray(parcelsRes.data) ? parcelsRes.data : parcelsRes.data?.data || [])
+        .filter((p: Parcel) => Number(p.Type_ID) === 3);
 
-      const mergedData: MedicalHistory[] = medicalData.map((history) => {
-        const prisoner = prisonerData.find((p) => p.Prisoner_ID === history.Prisoner_ID);
-        const staff = staffsData.find((s) => s.StaffID === history.StaffID);
-        const parcel = parcelsData.find((p) => p.PID === Number(history.Medicine));
-        return { ...history, Prisoner: prisoner, Staff: staff, Parcel: parcel };
+      const mergedData: MedicalHistory[] = medicalRaw.map((history: any) => {
+        const normalized: MedicalHistory = {
+          MedicalID: Number(history.MedicalID ?? history.medical_id ?? history.id ?? 0),
+          Initial_symptoms: history.Initial_symptoms ?? history.initial_symptoms ?? "",
+          Diagnosis: history.Diagnosis ?? history.diagnosis ?? "",
+          Medicine: Number(history.Medicine ?? history.medicine ?? 0),
+          MedicineAmount: Number(history.MedicineAmount ?? history.medicine_amount ?? 0),
+          Date_Inspection: history.Date_Inspection ?? history.date_inspection ?? dayjs().toISOString(),
+          Next_appointment: history.Next_appointment ?? history.next_appointment ?? null,
+          Prisoner_ID: Number(history.Prisoner_ID ?? history.prisoner_id ?? 0),
+          StaffID: Number(history.StaffID ?? history.staff_id ?? 0),
+          Doctor: String(history.Doctor ?? history.doctor ?? ""),
+        };
+        const prisoner = prisonerData.find((p) => p.Prisoner_ID === normalized.Prisoner_ID);
+        const staff = staffsData.find((s) => s.StaffID === normalized.StaffID);
+        const parcel = parcelsData.find((p) => p.PID === Number(normalized.Medicine));
+        return { ...normalized, Prisoner: prisoner, Staff: staff, Parcel: parcel };
       });
 
       setMedicalHistories(mergedData);
@@ -112,14 +128,14 @@ export default function PrisonerMedicalExam() {
       setStaffs(staffsData);
       setParcels(parcelsData);
       setFiltered(mergedData);
-    } catch {
-      message.error("ไม่สามารถโหลดข้อมูลได้");
+    } catch (e) {
+      msg.error("ไม่สามารถโหลดข้อมูลได้");
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => { fetchData(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
   useEffect(() => { applyFilter(searchValue); }, [medicalHistories, searchValue]);
 
   const applyFilter = (q: string) => {
@@ -127,13 +143,13 @@ export default function PrisonerMedicalExam() {
     const lower = q.toLowerCase();
     setFiltered(
       medicalHistories.filter((r) =>
-        r.Prisoner?.Inmate_ID?.toLowerCase().includes(lower) ||
-        (r.Prisoner?.FirstName + " " + r.Prisoner?.LastName)?.toLowerCase().includes(lower) ||
-        r.Doctor?.toLowerCase().includes(lower) ||                    // ← ค้นหาจากชื่อแพทย์ (string)
-        r.Staff?.FirstName?.toLowerCase().includes(lower) ||
-        r.Parcel?.ParcelName?.toLowerCase().includes(lower) ||
-        r.Initial_symptoms?.toLowerCase().includes(lower) ||
-        r.Diagnosis?.toLowerCase().includes(lower)
+        (r.Prisoner?.Inmate_ID || "").toLowerCase().includes(lower) ||
+        ((r.Prisoner?.FirstName || "") + " " + (r.Prisoner?.LastName || "")).toLowerCase().includes(lower) ||
+        (r.Doctor || "").toLowerCase().includes(lower) ||
+        (r.Staff?.FirstName || "").toLowerCase().includes(lower) ||
+        (r.Parcel?.ParcelName || "").toLowerCase().includes(lower) ||
+        (r.Initial_symptoms || "").toLowerCase().includes(lower) ||
+        (r.Diagnosis || "").toLowerCase().includes(lower)
       )
     );
     setTablePagination((p) => ({ ...p, current: 1 }));
@@ -152,10 +168,12 @@ export default function PrisonerMedicalExam() {
     form.setFieldsValue({
       ...record,
       Date_Inspection: dayjs(record.Date_Inspection),
-      Next_appointment: record.Next_appointment ? dayjs(record.Next_appointment) : null,
+      Next_appointment: record.Next_appointment ? dayjs(record.Next_appointment) : undefined,
       Medicine: record.Medicine,
       MedicineAmount: record.MedicineAmount,
       Doctor: record.Doctor,
+      Prisoner_ID: record.Prisoner_ID,
+      StaffID: record.StaffID,
     });
     setModalOpen(true);
   };
@@ -163,25 +181,29 @@ export default function PrisonerMedicalExam() {
   const onFinish = async (values: any) => {
     if (selected) {
       setModalOpen(false);
+      setSelected(null);
       return;
     }
 
     const basePayload = {
       ...values,
-      Date_Inspection: values.Date_Inspection.toISOString(),
+      Date_Inspection: values.Date_Inspection?.toISOString(),
       Next_appointment: values.Next_appointment ? values.Next_appointment.toISOString() : null,
     };
 
     const payload = {
       ...basePayload,
+      Prisoner_ID: Number(values.Prisoner_ID),
+      StaffID: Number(values.StaffID),
       Medicine: Number(values.Medicine),
       MedicineAmount: Number(values.MedicineAmount),
-      Doctor: String(values.Doctor || "").trim(),    // ← ส่งเป็น string
+      Doctor: String(values.Doctor || "").trim(),
     };
 
     try {
+      setSubmitting(true);
       await axios.post(`${API_URL}/medical_histories`, payload);
-      message.success("เพิ่มข้อมูลการตรวจรักษาเรียบร้อย");
+      msg.success("เพิ่มข้อมูลการตรวจรักษาเรียบร้อย");
 
       // ✅ สร้างคำร้องเบิกยาเฉพาะตอนเพิ่ม
       try {
@@ -192,26 +214,28 @@ export default function PrisonerMedicalExam() {
           Request_Date: dayjs().format("YYYY-MM-DD"),
         };
         await axios.post(`${API_URL}/requestings`, requestingPayload);
-        message.success("สร้างคำร้องเบิกยาเรียบร้อย");
+        msg.success("สร้างคำร้องเบิกยาเรียบร้อย");
       } catch {
-        message.error("บันทึกการตรวจแล้ว แต่ไม่สามารถสร้างคำร้องเบิกได้");
+        msg.error("บันทึกการตรวจแล้ว แต่ไม่สามารถสร้างคำร้องเบิกได้");
       }
 
       setModalOpen(false);
       form.resetFields();
       fetchData();
     } catch {
-      message.error("เกิดข้อผิดพลาดในการบันทึกข้อมูล");
+      msg.error("เกิดข้อผิดพลาดในการบันทึกข้อมูล");
+    } finally {
+      setSubmitting(false);
     }
   };
 
   const handleDelete = async (id: number) => {
     try {
       await axios.delete(`${API_URL}/medical_histories/${id}`);
-      message.success("ลบข้อมูลเรียบร้อย");
+      msg.success("ลบข้อมูลเรียบร้อย");
       fetchData();
     } catch {
-      message.error("เกิดข้อผิดพลาดในการลบข้อมูล");
+      msg.error("เกิดข้อผิดพลาดในการลบข้อมูล");
     }
   };
 
@@ -245,7 +269,7 @@ export default function PrisonerMedicalExam() {
     } else if (diffDays <= 7) {
       return (
         <div>
-          <Tag color="yellow">ใกล้ถึงกำหนด</Tag>
+          <Tag color="gold">ใกล้ถึงกำหนด</Tag>
           <div style={{ fontSize: "12px", color: "#999" }}>
             {appointmentDate.format("DD/MM/YYYY")} (อีก {diffDays} วัน)
           </div>
@@ -276,7 +300,7 @@ export default function PrisonerMedicalExam() {
     {
       title: "ข้อมูลผู้ต้องขัง",
       key: "prisoner_info",
-      width: 200,
+      width: 220,
       render: (_: any, record: MedicalHistory) => {
         const prisoner = record.Prisoner;
         if (!prisoner) return "-";
@@ -299,7 +323,7 @@ export default function PrisonerMedicalExam() {
     {
       title: "แพทย์ผู้ตรวจ",
       key: "doctor",
-      width: 160,
+      width: 170,
       render: (_: any, record: MedicalHistory) => (
         <span style={{ color: "#1890ff", fontWeight: "bold", fontSize: "13px" }}>
           <ExperimentOutlined /> {record.Doctor || "-"}
@@ -309,13 +333,13 @@ export default function PrisonerMedicalExam() {
     {
       title: "วันที่ตรวจ",
       dataIndex: "Date_Inspection",
-      width: 100,
+      width: 110,
       render: (date: string) => (date ? dayjs(date).format("DD/MM/YYYY") : "-"),
     },
     {
       title: "การวินิจฉัย",
       dataIndex: "Diagnosis",
-      width: 150,
+      width: 170,
       render: (text: string) => (
         <div style={{ color: "#52c41a", fontWeight: "bold", fontSize: "13px" }}>
           {text}
@@ -325,26 +349,26 @@ export default function PrisonerMedicalExam() {
     {
       title: "ยา",
       dataIndex: ["Parcel", "ParcelName"],
-      width: 120,
+      width: 140,
       render: (medicine: string) => <Tag color="green">{medicine || "-"}</Tag>,
     },
     {
       title: "จำนวน",
       dataIndex: "MedicineAmount",
-      width: 80,
+      width: 90,
       align: "center" as const,
       render: (amount: number) => <Tag color="blue">{amount || "-"}</Tag>,
     },
     {
       title: "นัดครั้งถัดไป",
       key: "next_appointment",
-      width: 140,
+      width: 160,
       render: (_: any, record: MedicalHistory) =>
         renderNextAppointment(record.Next_appointment),
     },
     {
       title: "ผู้คุมที่บันทึก",
-      width: 120,
+      width: 140,
       render: (_: any, record: MedicalHistory) => (
         <span style={{ fontSize: "13px" }}>
           <span style={{ marginRight: 6 }}>👮</span>{record.Staff?.FirstName || "-"}
@@ -354,7 +378,7 @@ export default function PrisonerMedicalExam() {
     {
       title: "จัดการ",
       key: "actions",
-      width: 120,
+      width: 130,
       render: (_: any, record: MedicalHistory) => (
         <Space size="small">
           <Button icon={<EyeOutlined />} size="small" type="primary" ghost onClick={() => openView(record)}>
@@ -374,6 +398,7 @@ export default function PrisonerMedicalExam() {
 
   return (
     <div style={{ maxWidth: 1600, margin: "0 auto", padding: 20 }}>
+      {contextHolder}
       <Title level={2}>
         <MedicineBoxOutlined /> บันทึกการตรวจ/รักษาผู้ต้องขัง
       </Title>
@@ -399,12 +424,12 @@ export default function PrisonerMedicalExam() {
 
       <Card>
         <Table
-          columns={columns}
+          columns={columns as any}
           dataSource={filtered}
           loading={loading}
           rowKey="MedicalID"
           pagination={tablePagination}
-          onChange={(pag) =>
+          onChange={(pag: any) =>
             setTablePagination({
               current: pag.current || 1,
               pageSize: pag.pageSize || tablePagination.pageSize,
@@ -440,7 +465,7 @@ export default function PrisonerMedicalExam() {
             </Col>
 
             <Col span={12}>
-              {/* เปลี่ยนเป็นช่องพิมพ์ชื่อแพทย์ */}
+              {/* ช่องพิมพ์ชื่อแพทย์ */}
               <Form.Item label="แพทย์ผู้ตรวจ" name="Doctor" rules={[{ required: !isView, message: "กรุณาระบุชื่อแพทย์" }]}>
                 <Input placeholder="ระบุชื่อแพทย์ผู้ตรวจ" disabled={isView} />
               </Form.Item>
@@ -519,7 +544,7 @@ export default function PrisonerMedicalExam() {
                 <Button onClick={() => setModalOpen(false)} style={{ marginRight: 8 }}>
                   ยกเลิก
                 </Button>
-                <Button type="primary" htmlType="submit">
+                <Button type="primary" htmlType="submit" loading={submitting}>
                   เพิ่มการตรวจรักษา
                 </Button>
               </>
