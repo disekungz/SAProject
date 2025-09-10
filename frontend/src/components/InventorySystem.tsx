@@ -1,11 +1,12 @@
 // src/components/InventorySystem.tsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   TextField, Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
   Paper, Box, Button, Select, MenuItem, InputLabel, FormControl, Typography,
   CircularProgress, Snackbar, Alert
 } from '@mui/material';
-import { api } from '../lib/axios'; // ✅ ใช้ instance ที่แนบ Authorization ให้อัตโนมัติ
+import { api } from '../lib/axios';
+import { getUser } from '../lib/auth'; // ✅ ใช้ตรวจสิทธิ์แอดมิน
 
 const InventorySystem: React.FC = () => {
   const [parcels, setParcels] = useState<any[]>([]);
@@ -29,8 +30,10 @@ const InventorySystem: React.FC = () => {
     severity: 'success' | 'error' | 'warning' | 'info';
   }>({ open: false, message: '', severity: 'success' });
 
-  const showSnackbar = (message: string, severity: 'success' | 'error' | 'warning' | 'info' = 'info') =>
-    setSnackbar({ open: true, message, severity });
+  const showSnackbar = (
+    message: string,
+    severity: 'success' | 'error' | 'warning' | 'info' = 'info'
+  ) => setSnackbar({ open: true, message, severity });
   const closeSnackbar = () => setSnackbar(s => ({ ...s, open: false }));
 
   // === Requestings (อนุมัติ) ===
@@ -38,23 +41,44 @@ const InventorySystem: React.FC = () => {
   const [approvedRequests, setApprovedRequests] = useState<any[]>([]);
   const [loadingRequests, setLoadingRequests] = useState(false);
 
-  const operatorMap: Record<number, string> = { 1: 'เพิ่ม', 2: 'เบิก', 3: 'แก้ไข', 4: 'เพิ่มใหม่' };
+  // ✅ ผู้ใช้ปัจจุบัน (ใช้เช็คสิทธิ์แอดมิน)
+  const user = useMemo(() => getUser(), []);
+  const isAdmin = user?.rankId === 1;
 
+  // ✅ map สถานะการดำเนินการ รวมการ "ลบทิ้ง"
+  const operatorMap: Record<number, string> = {
+    1: 'เพิ่ม',
+    2: 'เบิก',
+    3: 'แก้ไข',
+    4: 'เพิ่มใหม่',
+    5: 'ลบทิ้ง', // ✅ สำคัญ
+  };
+
+  // ฟังก์ชันคืน label สถานะ + ฟอลแบ็กเดาเป็น "ลบทิ้ง" ถ้าเงื่อนไขเข้าเคสลบ
+  const operatorLabel = (log: any) => {
+    const label = operatorMap[Number(log?.OperatorID)];
+    if (label) return label;
+
+    // เผื่อหลังบ้านยังไม่บันทึก OperatorID=5:
+    if ((log?.NewQuantity ?? 0) === 0 && (log?.OldQuantity ?? 0) > 0 && (log?.ChangeAmount ?? 0) < 0) {
+      return 'ลบทิ้ง';
+    }
+    return '-';
+  };
+
+  // แผนที่ช่วยแสดงชื่อ/ประเภท/สถานะต่าง ๆ
   const typeMap: Record<number, string> = types.reduce((acc: any, t: any) => {
     acc[t.Type_ID] = t.Type;
     return acc;
   }, {});
-
   const statusMap: Record<number, string> = statuses.reduce((acc: any, s: any) => {
     acc[s.Status_ID] = s.Status;
     return acc;
   }, {});
-
   const parcelMapById: Record<number, any> = parcels.reduce((acc: any, p: any) => {
     acc[p.PID] = p;
     return acc;
   }, {});
-
   const staffMapById: Record<number, any> = staffs.reduce((acc: any, s: any) => {
     acc[s.Staff_ID ?? s.StaffID ?? s.id] = s;
     return acc;
@@ -103,7 +127,7 @@ const InventorySystem: React.FC = () => {
       const logs = await api.get(`/operations`);
       setOperationLogs(logs.data);
     } catch {
-      // เงียบๆ
+      /* เงียบๆ */
     }
   };
 
@@ -163,7 +187,7 @@ const InventorySystem: React.FC = () => {
     const sid = Number(r?.StaffID ?? r?.Staff_ID ?? r?.staff_id);
     const s = staffMapById[sid];
     const f2 = s?.FirstName ?? s?.firstName ?? s?.first_name ?? s?.Name ?? s?.name;
-    const l2 = s?.LastName ?? s?.lastName ?? s?.last_name;
+    const l2 = s?.LastName ?? s?.last_name ?? s?.last_name;
     return [f2, l2].filter(Boolean).join(' ') || '-';
   };
 
@@ -295,6 +319,24 @@ const InventorySystem: React.FC = () => {
     }
   };
 
+  // ✅ ลบพัสดุ (แอดมินเท่านั้น)
+  const handleDelete = async (parcel: any) => {
+    if (!parcel) return;
+    const ok = window.confirm(`ยืนยันลบพัสดุ "${parcel.ParcelName}" ?`);
+    if (!ok) return;
+
+    try {
+      await api.delete(`/parcels/${parcel.PID}`);
+      setParcels(prev => prev.filter(p => p.PID !== parcel.PID));
+      setSelectedParcelId(null);
+      showSnackbar('ลบพัสดุสำเร็จ', 'success');
+      await refreshLogs();
+    } catch (e: any) {
+      const msg = e?.response?.data?.error || 'ลบพัสดุไม่สำเร็จ';
+      showSnackbar(msg, 'error');
+    }
+  };
+
   /** ================= Filter ================= */
   const filteredParcels = parcels
     .filter(p =>
@@ -308,7 +350,7 @@ const InventorySystem: React.FC = () => {
     const t = new Date(v ?? "").getTime();
     return Number.isNaN(t) ? 0 : t;
   };
-  const sortedOperationLogs = React.useMemo(
+  const sortedOperationLogs = useMemo(
     () =>
       [...operationLogs].sort(
         (b, a) => ts(a?.DateTime ?? a?.date) - ts(b?.DateTime ?? b?.date)
@@ -399,43 +441,59 @@ const InventorySystem: React.FC = () => {
         </Table>
       </TableContainer>
 
-      {/* ปุ่มแก้ไข/เบิก/เพิ่ม ของแถวที่เลือก */}
+      {/* ปุ่มแก้ไข/เบิก/เพิ่ม ของแถวที่เลือก + ปุ่มลบ (ขวาสุด เฉพาะแอดมิน) */}
       {selectedParcel && (
-        <Box mt={2} sx={{ display: 'flex', gap: 2 }}>
-          <Button
-            variant="contained" color="warning"
-            onClick={() => {
-              setCurrentParcel(selectedParcel);
-              setFormData({
-                name: selectedParcel.ParcelName,
-                quantity: selectedParcel.Quantity,
-                typeId: selectedParcel.Type_ID,
-              });
-              setAction('edit');
-            }}
-          >
-            แก้ไข
-          </Button>
-          <Button
-            variant="contained" color="error"
-            onClick={() => {
-              setCurrentParcel(selectedParcel);
-              setFormData({ name: selectedParcel.ParcelName, quantity: 1, typeId: selectedParcel.Type_ID });
-              setAction('reduce');
-            }}
-          >
-            เบิก
-          </Button>
-          <Button
-            variant="contained" color="primary"
-            onClick={() => {
-              setCurrentParcel(selectedParcel);
-              setFormData({ name: selectedParcel.ParcelName, quantity: 1, typeId: selectedParcel.Type_ID });
-              setAction('add');
-            }}
-          >
-            เพิ่ม
-          </Button>
+        <Box mt={2} sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+          {/* ฝั่งซ้าย */}
+          <Box sx={{ display: 'flex', gap: 2 }}>
+            <Button
+              variant="contained" color="warning"
+              onClick={() => {
+                setCurrentParcel(selectedParcel);
+                setFormData({
+                  name: selectedParcel.ParcelName,
+                  quantity: selectedParcel.Quantity,
+                  typeId: selectedParcel.Type_ID,
+                });
+                setAction('edit');
+              }}
+            >
+              แก้ไข
+            </Button>
+            <Button
+              variant="contained" color="error"
+              onClick={() => {
+                setCurrentParcel(selectedParcel);
+                setFormData({ name: selectedParcel.ParcelName, quantity: 1, typeId: selectedParcel.Type_ID });
+                setAction('reduce');
+              }}
+            >
+              เบิก
+            </Button>
+            <Button
+              variant="contained" color="primary"
+              onClick={() => {
+                setCurrentParcel(selectedParcel);
+                setFormData({ name: selectedParcel.ParcelName, quantity: 1, typeId: selectedParcel.Type_ID });
+                setAction('add');
+              }}
+            >
+              เพิ่ม
+            </Button>
+          </Box>
+
+          {/* ฝั่งขวา — แอดมินเท่านั้น */}
+          {isAdmin && (
+            <Box sx={{ ml: 'auto' }}>
+              <Button
+                variant="contained"
+                color="error"
+                onClick={() => handleDelete(selectedParcel)}
+              >
+                ลบพัสดุ
+              </Button>
+            </Box>
+          )}
         </Box>
       )}
 
@@ -567,7 +625,7 @@ const InventorySystem: React.FC = () => {
                 {sortedOperationLogs.map((log: any, idx: number) => (
                   <TableRow key={idx}>
                     <TableCell>{new Date(log.DateTime).toLocaleString()}</TableCell>
-                    <TableCell>{operatorMap[log.OperatorID] || '-'}</TableCell>
+                    <TableCell>{operatorLabel(log)}</TableCell>
                     <TableCell>{log.OldParcelName || log.Parcel?.ParcelName || '-'}</TableCell>
                     <TableCell>{log.NewParcelName || ''}</TableCell>
                     <TableCell>
