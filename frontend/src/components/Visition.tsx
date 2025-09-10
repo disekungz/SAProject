@@ -8,7 +8,6 @@ import {
   Typography,
   Row,
   Col,
-  message,
   Table,
   Space,
   Modal,
@@ -18,11 +17,12 @@ import {
   Tag,
   Layout,
   theme,
+  notification,
 } from "antd";
 import { SearchOutlined, EditOutlined, DeleteOutlined, PlusOutlined } from "@ant-design/icons";
 import axios from "axios";
 import dayjs, { Dayjs } from "dayjs";
-import { getUser } from "../lib/auth"; // <- ใช้ getUser() จาก auth.ts
+import { getUser, getToken } from "../lib/auth";
 
 const { Title } = Typography;
 const { Option } = Select;
@@ -64,17 +64,16 @@ interface VisitationForm {
   VisitorFirstName?: string;
   VisitorLastName?: string;
   VisitorCitizenID?: string;
-  Staff_ID: number;
-  Status_ID: number;
-  Relationship_ID: number;
+  Staff_ID: number | undefined;
+  Status_ID: number | undefined;
+  Relationship_ID: number | undefined;
 }
 
 export default function Visition() {
   const { token: { colorBgContainer, borderRadiusLG } } = theme.useToken();
+  const [api, contextHolder] = notification.useNotification();
 
-  // อ่าน user ที่ login (จาก localStorage ตาม auth.ts)
   const currentUser = getUser();
-  // ตาม comment ใน register.tsx backend ตั้งค่า default ญาติ เป็น rankId = 3 (ปรับถ้าของคุณต่างไป)
   const isVisitor = currentUser?.rankId === 3;
 
   const [visitations, setVisitations] = useState<Visitation[]>([]);
@@ -92,17 +91,19 @@ export default function Visition() {
   const [bookedSlots, setBookedSlots] = useState<number[]>([]);
   const [inmateOptions, setInmateOptions] = useState<{ value: string; label: string; key: number }[]>([]);
 
-  // --- Fetch data ---
   const fetchData = async () => {
     setLoading(true);
     try {
+      const token = getToken();
+      const authHeader = { headers: { Authorization: `Bearer ${token}` } };
+      
       const [vRes, pRes, sRes, stRes, rRes, tsRes] = await Promise.all([
-        axios.get(`${API_URL}/visitations`),
-        axios.get(`${API_URL}/prisoners`),
-        axios.get(`${API_URL}/staffs`),
-        axios.get(`${API_URL}/statuses`),
-        axios.get(`${API_URL}/relationships`),
-        axios.get(`${API_URL}/timeslots`),
+        axios.get(`${API_URL}/visitations`, authHeader),
+        axios.get(`${API_URL}/prisoners`, authHeader),
+        axios.get(`${API_URL}/staffs`, authHeader),
+        axios.get(`${API_URL}/statuses`, authHeader),
+        axios.get(`${API_URL}/relationships`, authHeader),
+        axios.get(`${API_URL}/timeslots`, authHeader),
       ]);
 
       const visitData: Visitation[] = vRes.data || [];
@@ -130,7 +131,7 @@ export default function Visition() {
       setTimeSlots(timeSlotData);
     } catch (error) {
       console.error(error);
-      message.error("ไม่สามารถโหลดข้อมูลการเยี่ยมญาติได้");
+      api.error({ message: "Error", description: "Could not load visitation data." });
     } finally {
       setLoading(false);
     }
@@ -138,9 +139,9 @@ export default function Visition() {
 
   useEffect(() => {
     fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // --- Search ---
   useEffect(() => {
     const lowercasedValue = searchValue.toLowerCase().trim();
     if (lowercasedValue === "") {
@@ -161,7 +162,6 @@ export default function Visition() {
     }
   }, [searchValue, visitations]);
 
-  // --- Handlers ---
   const handleDateChange = (date: Dayjs | null) => {
     if (!date) {
       setBookedSlots([]);
@@ -185,9 +185,8 @@ export default function Visition() {
     form.resetFields();
     setEditing(null);
     setBookedSlots([]);
-    // ถ้าเป็นญาติ ให้ตั้งค่า default สถานะเป็น "รอดำเนินการ" (ถ้าต้องการ)
     if (isVisitor) {
-      const pending = statuses.find(s => s.Status === "รอดำเนินการ");
+      const pending = statuses.find(s => s.Status === "รอดำเนินการ" || s.Status === "รอ...");
       if (pending) form.setFieldsValue({ Status_ID: pending.Status_ID });
     }
     setOpen(true);
@@ -214,7 +213,6 @@ export default function Visition() {
       .filter(v => v.ID !== record.ID)
       .map(v => v.TimeSlot_ID);
     setBookedSlots(bookedForDate);
-
     setOpen(true);
   };
 
@@ -235,7 +233,7 @@ export default function Visition() {
     }
   };
 
-  const onInmateSelect = (value: string, option: { key: number }) => {
+  const onInmateSelect = (_: string, option: { key: number }) => {
     form.setFieldsValue({ Inmate_ID: option.key });
   };
 
@@ -247,7 +245,26 @@ export default function Visition() {
 
   const onFinish = async (values: VisitationForm) => {
     setLoading(true);
+    const token = getToken();
     try {
+      if (isVisitor && !currentUser?.citizenId) {
+        api.error({ message: "Error", description: "User data not found. Please log in again." });
+        setLoading(false);
+        return;
+      }
+
+      const visitorData = isVisitor
+        ? {
+            VisitorFirstName: currentUser?.firstName,
+            VisitorLastName: currentUser?.lastName,
+            VisitorCitizenID: currentUser?.citizenId,
+          }
+        : {
+            VisitorFirstName: values.VisitorFirstName,
+            VisitorLastName: values.VisitorLastName,
+            VisitorCitizenID: values.VisitorCitizenID,
+          };
+
       const payload = {
         Visit_Date: values.Visit_Date?.format("YYYY-MM-DD"),
         TimeSlot_ID: values.TimeSlot_ID,
@@ -255,23 +272,22 @@ export default function Visition() {
         Relationship_ID: values.Relationship_ID,
         Staff_ID: values.Staff_ID,
         Status_ID: values.Status_ID,
-        VisitorFirstName: values.VisitorFirstName,
-        VisitorLastName: values.VisitorLastName,
-        VisitorCitizenID: values.VisitorCitizenID || `AUTO-${Date.now()}`,
+        ...visitorData
       };
 
-      // บังคับถ้าเป็นญาติแล้วพยายามส่งสถานะไม่ใช่ "รอดำเนินการ" -> เปลี่ยนกลับ
       if (isVisitor) {
-        const pending = statuses.find(s => s.Status === "รอดำเนินการ");
+        const pending = statuses.find(s => s.Status === "รอดำเนินการ" || s.Status === "รอ...");
         if (pending) payload.Status_ID = pending.Status_ID;
       }
+      
+      const authHeader = { headers: { Authorization: `Bearer ${token}` } };
 
       if (editing) {
-        await axios.put(`${API_URL}/visitations/${editing.ID}`, payload);
-        message.success("แก้ไขสำเร็จ");
+        await axios.put(`${API_URL}/visitations/${editing.ID}`, payload, authHeader);
+        api.success({ message: "สำเร็จ", description: "อัพเดทคำร้องการเยี่ยมแล้ว." });
       } else {
-        await axios.post(`${API_URL}/visitations`, payload);
-        message.success("เพิ่มการเยี่ยมญาติสำเร็จ");
+        await axios.post(`${API_URL}/visitations`, payload, authHeader);
+        api.success({ message: "สำเร็จ", description: "สร้างคำร้องการเยี่ยมแล้ว.." });
       }
 
       setOpen(false);
@@ -279,19 +295,22 @@ export default function Visition() {
       fetchData();
     } catch (error: any) {
       console.error(error);
-      message.error(error.response?.data?.message || "เกิดข้อผิดพลาด");
+      const errorMessage = error.response?.data?.error || "An error occurred";
+      api.error({ message: "Error", description: errorMessage });
     } finally {
       setLoading(false);
     }
   };
 
   const handleDelete = async (id: number) => {
+    const token = getToken();
     try {
-      await axios.delete(`${API_URL}/visitations/${id}`);
-      message.success("ลบสำเร็จ");
+      await axios.delete(`${API_URL}/visitations/${id}`, { headers: { Authorization: `Bearer ${token}` } });
+      api.success({ message: "สำเร็จ", description: "ลบคำร้องการเยี่ยมแล้ว.." });
       fetchData();
-    } catch (error) {
-      message.error("เกิดข้อผิดพลาดในการลบ");
+    } catch (error:any) {
+        const errorMessage = error.response?.data?.error || "Could not delete visitation";
+        api.error({ message: "Error", description: errorMessage });
     }
   };
 
@@ -305,40 +324,49 @@ export default function Visition() {
       case "ปฏิเสธ": case "ไม่อนุมัติ": return <Tag color="red">ปฏิเสธ</Tag>;
       case "รอดำเนินการ": case "รอ...": return <Tag color="blue">รอดำเนินการ</Tag>;
       case "สำเร็จ": return <Tag color="purple">สำเร็จ</Tag>;
-      default: return <Tag>{statusName || "ไม่ระบุ"}</Tag>;
+      default: return <Tag>{statusName || "N/A"}</Tag>;
     }
   };
 
   const columns = [
-    { title: "ลำดับ", key: "index", render: (_: any, __: any, idx: number) => idx + 1, width: 70 },
-    { title: "ผู้ต้องขัง", render: (_: any, r: Visitation) => `${r.Inmate?.FirstName} ${r.Inmate?.LastName}` },
-    { title: "ผู้มาเยี่ยม", render: (_: any, r: Visitation) => `${r.Visitor?.FirstName} ${r.Visitor?.LastName}` },
-    { title: "เลขบัตรประชาชน", render: (_: any, r: Visitation) => r.Visitor?.Citizen_ID },
-    { title: "ความสัมพันธ์", dataIndex: ["Relationship", "Relationship_name"] },
-    { title: "เจ้าหน้าที่", render: (_: any, r: Visitation) => `${r.Staff?.FirstName} ${r.Staff?.LastName}` },
-    { title: "สถานะ", dataIndex: ["Status", "Status"], render: (status: string) => getStatusTag(status) },
-    { title: "วันที่เยี่ยม", dataIndex: "Visit_Date", render: (date: string) => dayjs(date).format("DD/MM/YYYY") },
-    { title: "ช่วงเวลา", dataIndex: ["TimeSlot", "TimeSlot_Name"] },
+    { title: "No.", key: "index", render: (_: any, __: any, idx: number) => idx + 1, width: 70 },
+    { title: "Inmate", render: (_: any, r: Visitation) => `${r.Inmate?.FirstName} ${r.Inmate?.LastName}` },
+    { title: "Visitor", render: (_: any, r: Visitation) => `${r.Visitor?.FirstName} ${r.Visitor?.LastName}` },
+    { title: "Citizen ID", render: (_: any, r: Visitation) => r.Visitor?.Citizen_ID },
+    { title: "Relationship", dataIndex: ["Relationship", "Relationship_name"] },
+    { title: "Staff", render: (_: any, r: Visitation) => `${r.Staff?.FirstName} ${r.Staff?.LastName}` },
+    { title: "Status", dataIndex: ["Status", "Status"], render: (status: string) => getStatusTag(status) },
+    { title: "Visit Date", dataIndex: "Visit_Date", render: (date: string) => dayjs(date).format("DD/MM/YYYY") },
+    { title: "Time Slot", dataIndex: ["TimeSlot", "TimeSlot_Name"] },
     {
-      title: "จัดการ",
+      title: "Action",
       key: "action",
-      render: (_: any, r: Visitation) => (
-        <Space>
-          <Button type="primary" ghost icon={<EditOutlined />} size="small" onClick={() => openEdit(r)}>แก้ไข</Button>
-          <Popconfirm title="ยืนยันการลบ?" onConfirm={() => handleDelete(r.ID)} okText="ยืนยัน" cancelText="ยกเลิก">
-            <Button icon={<DeleteOutlined />} size="small" danger>ลบ</Button>
-          </Popconfirm>
-        </Space>
-      ),
+      render: (_: any, r: Visitation) => {
+        const canManage = !isVisitor || (currentUser?.citizenId === r.Visitor?.Citizen_ID);
+        
+        if (!canManage) {
+            return null;
+        }
+        
+        return (
+            <Space>
+                <Button type="primary" ghost icon={<EditOutlined />} size="small" onClick={() => openEdit(r)}>แก้ไข</Button>
+                <Popconfirm title="Confirm Delete?" onConfirm={() => handleDelete(r.ID)} okText="Confirm" cancelText="Cancel">
+                    <Button icon={<DeleteOutlined />} size="small" danger>ลบคำร้อง</Button>
+                </Popconfirm>
+            </Space>
+        )
+      },
     },
   ];
 
   return (
     <Layout>
+      {contextHolder}
       <Header style={{ padding: "0 16px", background: colorBgContainer, display: "flex", alignItems: "center", justifyContent: "space-between", borderRadius: borderRadiusLG }}>
-        <Title level={3} style={{ margin: 0 }}>ระบบจัดการการเยี่ยมญาติ</Title>
+        <Title level={3} style={{ margin: 0 }}>ยื่นคำร้องขอเยี่ยมผู้ต้องขัง</Title>
         <Button type="primary" icon={<PlusOutlined />} onClick={openAdd}>
-          เพิ่มการเยี่ยมญาติ
+          เพิ่มข้อมูลการเยี่ยม
         </Button>
       </Header>
       <Content style={{ padding: "16px 0" }}>
@@ -346,7 +374,7 @@ export default function Visition() {
           <Row justify="end" style={{ marginBottom: 16 }}>
             <Col>
               <Input
-                placeholder="ค้นหา..."
+                placeholder="Search..."
                 prefix={<SearchOutlined />}
                 allowClear
                 value={searchValue}
@@ -365,89 +393,87 @@ export default function Visition() {
         </Card>
       </Content>
 
-      <Modal title={editing ? "แก้ไขข้อมูลการเยี่ยม" : "เพิ่มข้อมูลการเยี่ยม"} open={open} onCancel={() => setOpen(false)} footer={null} width={700}>
+      <Modal title={editing ? "Edit Visitation" : "Add Visitation"} open={open} onCancel={() => setOpen(false)} footer={null} width={700}>
         <Form form={form} layout="vertical" onFinish={onFinish} style={{ marginTop: 24 }}>
           <Row gutter={16}>
             <Col span={12}>
               <Form.Item
-                label="ผู้ต้องขัง"
+                label="Inmate"
                 name="Inmate_Input"
-                rules={[{ required: true, message: "กรุณาพิมพ์และเลือกผู้ต้องขัง" }]}
+                rules={[{ required: true, message: "Please select an inmate" }]}
               >
                 <AutoComplete
                   options={inmateOptions}
                   onSearch={handleInmateSearch}
                   onSelect={onInmateSelect}
                   onChange={onInmateChange}
-                  placeholder="พิมพ์ชื่อผู้ต้องขัง..."
+                  placeholder="Search for an inmate..."
                 />
               </Form.Item>
               <Form.Item name="Inmate_ID" hidden><Input /></Form.Item>
             </Col>
-
-            <Col span={8}>
-              <Form.Item label="ชื่อผู้มาเยี่ยม" name="VisitorFirstName" rules={[{ required: true, message: "กรุณากรอกชื่อ" }]}>
-                <Input placeholder="ชื่อ" />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item label="นามสกุลผู้มาเยี่ยม" name="VisitorLastName" rules={[{ required: true, message: "กรุณากรอกนามสกุล" }]}>
-                <Input placeholder="นามสกุล" />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item label="เลขบัตรประชาชน" name="VisitorCitizenID" rules={[{ required: true, message: "กรุณากรอกเลขบัตรประชาชน" }]}>
-                <Input placeholder="เลขบัตรประชาชน" />
-              </Form.Item>
-            </Col>
+            
+            {!isVisitor && (
+                <>
+                    <Col span={8}>
+                    <Form.Item label="Visitor First Name" name="VisitorFirstName" rules={[{ required: true, message: "Please enter first name" }]}>
+                        <Input placeholder="First Name" />
+                    </Form.Item>
+                    </Col>
+                    <Col span={8}>
+                    <Form.Item label="Visitor Last Name" name="VisitorLastName" rules={[{ required: true, message: "Please enter last name" }]}>
+                        <Input placeholder="Last Name" />
+                    </Form.Item>
+                    </Col>
+                    <Col span={8}>
+                    <Form.Item label="Visitor Citizen ID" name="VisitorCitizenID" rules={[{ required: true, message: "Please enter Citizen ID" }]}>
+                        <Input placeholder="Citizen ID" />
+                    </Form.Item>
+                    </Col>
+                </>
+            )}
 
             <Col span={12}>
-              <Form.Item label="ความสัมพันธ์" name="Relationship_ID" rules={[{ required: true, message: "กรุณาเลือกความสัมพันธ์" }]}>
-                <Select placeholder="เลือกความสัมพันธ์">
+              <Form.Item label="Relationship" name="Relationship_ID" rules={[{ required: true, message: "Please select a relationship" }]}>
+                <Select placeholder="Select a relationship">
                   {relationships.map(r => <Option key={r.ID} value={r.ID}>{r.Relationship_name}</Option>)}
                 </Select>
               </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item label="เจ้าหน้าที่" name="Staff_ID" rules={[{ required: true, message: "กรุณาเลือกเจ้าหน้าที่" }]}>
-                <Select showSearch filterOption={(input, option) => String(option?.children).toLowerCase().includes(input.toLowerCase())} placeholder="เลือกเจ้าหน้าที่">
+              <Form.Item label="Staff" name="Staff_ID" rules={[{ required: true, message: "Please select a staff member" }]}>
+                <Select showSearch filterOption={(input, option) => String(option?.children).toLowerCase().includes(input.toLowerCase())} placeholder="Select a staff member">
                   {staffs.map(s => <Option key={s.StaffID} value={s.StaffID}>{s.FirstName} {s.LastName}</Option>)}
                 </Select>
               </Form.Item>
             </Col>
 
-            <Col span={24}>
-              <Form.Item
-  label="สถานะ"
-  name="Status_ID"
-  rules={[{ required: true, message: "กรุณาเลือกสถานะ" }]}
->
-  <Select placeholder="เลือกสถานะ">
-    {isVisitor
-      ? statuses
-          .filter(st => st.Status === "รอ...")   // <-- แก้ให้ตรงกับ DB
-          .map(st => (
-            <Option key={st.Status_ID} value={st.Status_ID}>
-              {st.Status}
-            </Option>
-          ))
-      : statuses.map(st => (
-          <Option key={st.Status_ID} value={st.Status_ID}>
-            {st.Status}
-          </Option>
-        ))}
-  </Select>
-</Form.Item>
-            </Col>
-
+            {!isVisitor && (
+                 <Col span={24}>
+                 <Form.Item
+                    label="Status"
+                    name="Status_ID"
+                    rules={[{ required: true, message: "Please select a status" }]}
+                    >
+                    <Select placeholder="Select a status">
+                        {statuses.map(st => (
+                            <Option key={st.Status_ID} value={st.Status_ID}>
+                                {st.Status}
+                            </Option>
+                        ))}
+                    </Select>
+                </Form.Item>
+               </Col>
+            )}
+           
             <Col span={12}>
-              <Form.Item label="วันที่เยี่ยม" name="Visit_Date" rules={[{ required: true, message: "กรุณาเลือกวันที่เยี่ยม" }]}>
+              <Form.Item label="Visit Date" name="Visit_Date" rules={[{ required: true, message: "Please select a visit date" }]}>
                 <DatePicker style={{ width: "100%" }} format="DD/MM/YYYY" onChange={handleDateChange} disabledDate={disabledWeekend} />
               </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item label="ช่วงเวลา" name="TimeSlot_ID" rules={[{ required: true, message: "กรุณาเลือกช่วงเวลา" }]}>
-                <Select placeholder="เลือกช่วงเวลา">
+              <Form.Item label="Time Slot" name="TimeSlot_ID" rules={[{ required: true, message: "Please select a time slot" }]}>
+                <Select placeholder="Select a time slot">
                   {timeSlots.map(ts => <Option key={ts.ID} value={ts.ID} disabled={bookedSlots.includes(ts.ID)}>{ts.TimeSlot_Name}</Option>)}
                 </Select>
               </Form.Item>
@@ -456,8 +482,8 @@ export default function Visition() {
 
           <Row justify="end">
             <Space>
-              <Button onClick={() => setOpen(false)}>ยกเลิก</Button>
-              <Button type="primary" htmlType="submit" loading={loading}>บันทึก</Button>
+              <Button onClick={() => setOpen(false)}>Cancel</Button>
+              <Button type="primary" htmlType="submit" loading={loading}>Save</Button>
             </Space>
           </Row>
         </Form>
@@ -465,3 +491,4 @@ export default function Visition() {
     </Layout>
   );
 }
+
