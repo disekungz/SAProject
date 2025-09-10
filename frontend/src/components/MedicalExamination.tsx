@@ -17,13 +17,14 @@ import {
   Tag,
   Avatar,
   InputNumber,
-  notification, // ✅ ใช้ notification แทน message
+  notification,
 } from "antd";
 import {
   SearchOutlined,
   EyeOutlined,
   DeleteOutlined,
   PlusOutlined,
+  EditOutlined,
   UserOutlined,
   MedicineBoxOutlined,
   ExperimentOutlined,
@@ -88,6 +89,7 @@ export default function PrisonerMedicalExam() {
   const [searchValue, setSearchValue] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [selected, setSelected] = useState<MedicalHistory | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
@@ -166,12 +168,14 @@ export default function PrisonerMedicalExam() {
   const openAdd = () => {
     form.resetFields();
     setSelected(null);
+    setIsEditing(true); // โหมดเพิ่ม = แก้ไข
     setModalOpen(true);
   };
 
   // เปิดโหมดดู (read-only)
   const openView = (record: MedicalHistory) => {
     setSelected(record);
+    setIsEditing(false);
     form.setFieldsValue({
       ...record,
       Date_Inspection: dayjs(record.Date_Inspection),
@@ -186,12 +190,6 @@ export default function PrisonerMedicalExam() {
   };
 
   const onFinish = async (values: any) => {
-    if (selected) {
-      setModalOpen(false);
-      setSelected(null);
-      return;
-    }
-
     const basePayload = {
       ...values,
       Date_Inspection: values.Date_Inspection?.toISOString(),
@@ -209,25 +207,33 @@ export default function PrisonerMedicalExam() {
 
     try {
       setSubmitting(true);
-      await axios.post(`${API_URL}/medical_histories`, payload);
-      toast.success("เพิ่มข้อมูลการตรวจรักษาเรียบร้อย");
+      if (selected && isEditing) {
+        // ✅ อัปเดตข้อมูล
+        await axios.put(`${API_URL}/medical_histories/${selected.MedicalID}`, payload);
+        toast.success("บันทึกการแก้ไขเรียบร้อย");
+      } else if (!selected && isEditing) {
+        // ✅ เพิ่มข้อมูลใหม่
+        await axios.post(`${API_URL}/medical_histories`, payload);
+        toast.success("เพิ่มข้อมูลการตรวจรักษาเรียบร้อย");
 
-      // ✅ สร้างคำร้องเบิกยาเฉพาะตอนเพิ่ม
-      try {
-        const requestingPayload = {
-          PID: payload.Medicine,
-          Amount_Request: payload.MedicineAmount,
-          Staff_ID: payload.StaffID,
-          Request_Date: dayjs().format("YYYY-MM-DD"),
-        };
-        await axios.post(`${API_URL}/requestings`, requestingPayload);
-        toast.success("สร้างคำร้องเบิกยาเรียบร้อย");
-      } catch {
-        toast.error("บันทึกการตรวจแล้ว แต่ไม่สามารถสร้างคำร้องเบิกได้");
+        // ✅ สร้างคำร้องเบิกยาเฉพาะตอนเพิ่ม
+        try {
+          const requestingPayload = {
+            PID: payload.Medicine,
+            Amount_Request: payload.MedicineAmount,
+            Staff_ID: payload.StaffID,
+            Request_Date: dayjs().format("YYYY-MM-DD"),
+          };
+          await axios.post(`${API_URL}/requestings`, requestingPayload);
+          toast.success("สร้างคำร้องเบิกยาเรียบร้อย");
+        } catch {
+          toast.error("บันทึกการตรวจแล้ว แต่ไม่สามารถสร้างคำร้องเบิกได้");
+        }
       }
-
       setModalOpen(false);
       form.resetFields();
+      setSelected(null);
+      setIsEditing(false);
       fetchData();
     } catch {
       toast.error("เกิดข้อผิดพลาดในการบันทึกข้อมูล");
@@ -401,7 +407,7 @@ export default function PrisonerMedicalExam() {
     },
   ];
 
-  const isView = !!selected;
+  const isView = selected !== null && !isEditing;
 
   return (
     <div style={{ maxWidth: 1600, margin: "0 auto", padding: 20 }}>
@@ -447,9 +453,9 @@ export default function PrisonerMedicalExam() {
       </Card>
 
       <Modal
-        title={isView ? "ดูประวัติการตรวจรักษา" : "เพิ่มการตรวจรักษา"}
+        title={isView ? "ดูประวัติการตรวจรักษา" : (selected ? "แก้ไขประวัติการตรวจรักษา" : "เพิ่มการตรวจรักษา")}
         open={modalOpen}
-        onCancel={() => { setModalOpen(false); form.resetFields(); setSelected(null); }}
+        onCancel={() => { setModalOpen(false); form.resetFields(); setSelected(null); setIsEditing(false); }}
         footer={null}
         destroyOnClose
         width={800}
@@ -457,8 +463,8 @@ export default function PrisonerMedicalExam() {
         <Form form={form} layout="vertical" onFinish={onFinish}>
           <Row gutter={16}>
             <Col span={12}>
-              <Form.Item label="ผู้ต้องขัง" name="Prisoner_ID" rules={[{ required: !isView }]}>
-                <Select showSearch placeholder="เลือกผู้ต้องขัง" optionFilterProp="label" disabled={isView}>
+              <Form.Item label="ผู้ต้องขัง" name="Prisoner_ID" rules={[{ required: isEditing, message: "กรุณาเลือกผู้ต้องขัง" }]}>
+                <Select showSearch placeholder="เลือกผู้ต้องขัง" optionFilterProp="label" disabled={!isEditing}>
                   {prisoners.map((p) => (
                     <Option
                       key={p.Prisoner_ID}
@@ -474,41 +480,41 @@ export default function PrisonerMedicalExam() {
 
             <Col span={12}>
               {/* ช่องพิมพ์ชื่อแพทย์ */}
-              <Form.Item label="แพทย์ผู้ตรวจ" name="Doctor" rules={[{ required: !isView, message: "กรุณาระบุชื่อแพทย์" }]}>
-                <Input placeholder="ระบุชื่อแพทย์ผู้ตรวจ" disabled={isView} />
+              <Form.Item label="แพทย์ผู้ตรวจ" name="Doctor" rules={[{ required: isEditing, message: "กรุณาระบุชื่อแพทย์" }]}>
+                <Input placeholder="ระบุชื่อแพทย์ผู้ตรวจ" disabled={!isEditing} />
               </Form.Item>
             </Col>
 
             <Col span={12}>
-              <Form.Item label="วันที่ตรวจ" name="Date_Inspection" rules={[{ required: !isView }]}>
-                <DatePicker style={{ width: "100%" }} format="DD/MM/YYYY" disabled={isView} />
+              <Form.Item label="วันที่ตรวจ" name="Date_Inspection" rules={[{ required: isEditing, message: "กรุณาระบุวันที่ตรวจ" }]}>
+                <DatePicker style={{ width: "100%" }} format="DD/MM/YYYY" disabled={!isEditing} />
               </Form.Item>
             </Col>
             <Col span={12}>
               <Form.Item label="นัดครั้งถัดไป" name="Next_appointment">
-                <DatePicker style={{ width: "100%" }} format="DD/MM/YYYY" disabled={isView} />
+                <DatePicker style={{ width: "100%" }} format="DD/MM/YYYY" disabled={!isEditing} />
               </Form.Item>
             </Col>
 
             <Col span={24}>
-              <Form.Item label="อาการเบื้องต้น" name="Initial_symptoms" rules={[{ required: !isView }]}>
-                <Input.TextArea rows={2} disabled={isView} />
+              <Form.Item label="อาการเบื้องต้น" name="Initial_symptoms" rules={[{ required: isEditing, message: "กรุณาระบุอาการ" }]}>
+                <Input.TextArea rows={2} disabled={!isEditing} />
               </Form.Item>
             </Col>
 
             <Col span={24}>
-              <Form.Item label="การวินิจฉัย" name="Diagnosis" rules={[{ required: !isView }]}>
-                <Input.TextArea rows={2} disabled={isView} />
+              <Form.Item label="การวินิจฉัย" name="Diagnosis" rules={[{ required: isEditing, message: "กรุณาระบุการวินิจฉัย" }]}>
+                <Input.TextArea rows={2} disabled={!isEditing} />
               </Form.Item>
             </Col>
 
             <Col span={12}>
-              <Form.Item label="ยาที่จ่าย" name="Medicine" rules={[{ required: !isView }]}>
+              <Form.Item label="ยาที่จ่าย" name="Medicine" rules={[{ required: isEditing, message: "กรุณาเลือกยา" }]}>
                 <Select
                   showSearch
                   placeholder="เลือกยา"
                   optionFilterProp="label"
-                  disabled={isView}
+                  disabled={!isEditing}
                 >
                   {parcels.map((p) => (
                     <Option key={p.PID} value={p.PID} label={p.ParcelName}>
@@ -523,15 +529,15 @@ export default function PrisonerMedicalExam() {
               <Form.Item
                 label="จำนวนยาที่จ่าย"
                 name="MedicineAmount"
-                rules={[{ required: !isView, message: "กรุณาระบุจำนวนยา" }]}
+                rules={[{ required: isEditing, message: "กรุณาระบุจำนวนยา" }]}
               >
-                <InputNumber min={1} style={{ width: "100%" }} disabled={isView} />
+                <InputNumber min={1} style={{ width: "100%" }} disabled={!isEditing} />
               </Form.Item>
             </Col>
 
             <Col span={12}>
-              <Form.Item label="ผู้คุมที่ลงข้อมูล" name="StaffID" rules={[{ required: !isView }]}>
-                <Select showSearch placeholder="เลือกผู้คุม" optionFilterProp="label" disabled={isView}>
+              <Form.Item label="ผู้คุมที่ลงข้อมูล" name="StaffID" rules={[{ required: isEditing, message: "กรุณาเลือกผู้คุม" }]}>
+                <Select showSearch placeholder="เลือกผู้คุม" optionFilterProp="label" disabled={!isEditing}>
                   {staffs.map((s) => (
                     <Option key={s.StaffID} value={s.StaffID} label={s.FirstName}>
                       {s.FirstName}
@@ -542,21 +548,27 @@ export default function PrisonerMedicalExam() {
             </Col>
           </Row>
 
-          <div style={{ textAlign: "right" }}>
-            {isView ? (
-              <Button onClick={() => { setModalOpen(false); setSelected(null); }} type="primary">
-                ปิด
-              </Button>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+            {selected && !isEditing ? (
+              <Button onClick={() => setIsEditing(true)} icon={<EditOutlined />}>แก้ไข</Button>
             ) : (
-              <>
-                <Button onClick={() => setModalOpen(false)} style={{ marginRight: 8 }}>
-                  ยกเลิก
-                </Button>
-                <Button type="primary" htmlType="submit" loading={submitting}>
-                  เพิ่มการตรวจรักษา
-                </Button>
-              </>
+              <span />
             )}
+
+            <div style={{ marginLeft: "auto" }}>
+              {selected && !isEditing ? (
+                <Button type="primary" onClick={() => { setModalOpen(false); setSelected(null); form.resetFields(); }}>ปิด</Button>
+              ) : (
+                <>
+                  <Button onClick={() => { setModalOpen(false); setSelected(null); setIsEditing(false); form.resetFields(); }} style={{ marginRight: 8 }}>
+                    ยกเลิก
+                  </Button>
+                  <Button type="primary" htmlType="submit" loading={submitting}>
+                    {selected ? "บันทึกการแก้ไข" : "เพิ่มการตรวจรักษา"}
+                  </Button>
+                </>
+              )}
+            </div>
           </div>
         </Form>
       </Modal>
