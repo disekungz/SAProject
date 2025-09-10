@@ -229,6 +229,40 @@ func ReduceParcel(c *gin.Context) {
 
 	c.JSON(http.StatusOK, parcel)
 }
+func DeleteParcel(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil || id <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+
+	db := configs.DB()
+	var parcel entity.Parcel
+	if err := db.First(&parcel, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Parcel not found"})
+		return
+	}
+
+	// log ก่อนลบ (OperatorID=5 คือ “ลบ”)
+	mid := midFromContextInt(c)
+	_ = db.Create(&entity.Operation{
+		DateTime:      time.Now(),
+		PID:           parcel.PID,
+		OldQuantity:   parcel.Quantity,
+		NewQuantity:   0,
+		ChangeAmount:  -parcel.Quantity,
+		OperatorID:    5,
+		MID:           mid,
+		OldParcelName: parcel.ParcelName,
+		OldTypeID:     ptrInt(int(parcel.Type_ID)),
+	}).Error
+
+	if err := db.Delete(&entity.Parcel{}, id).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Delete failed"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
+}
 
 func calculateStatus(qty int) string {
 	if qty == 0 {
