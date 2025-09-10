@@ -96,6 +96,8 @@ export default function PrisonerMedicalExam() {
   // 👉 เก็บสถานะหน้าปัจจุบัน/ขนาดหน้า เพื่อนับลำดับต่อหน้า
   const [tablePagination, setTablePagination] = useState({ current: 1, pageSize: 8 });
 
+  const isView = selected !== null && !isEditing;
+
   // --- Fetch Data ---
   const fetchData = async () => {
     setLoading(true);
@@ -168,7 +170,7 @@ export default function PrisonerMedicalExam() {
   const openAdd = () => {
     form.resetFields();
     setSelected(null);
-    setIsEditing(true); // โหมดเพิ่ม = แก้ไข
+    setIsEditing(true); // โหมดเพิ่ม
     setModalOpen(true);
   };
 
@@ -196,12 +198,13 @@ export default function PrisonerMedicalExam() {
       Next_appointment: values.Next_appointment ? values.Next_appointment.toISOString() : null,
     };
 
+    // ✅ ถ้าเป็นการแก้ไขข้อมูลเดิมและปิดแก้ไขช่องยา/จำนวนยา ให้ fallback ไปใช้ค่าจาก selected
     const payload = {
       ...basePayload,
       Prisoner_ID: Number(values.Prisoner_ID),
       StaffID: Number(values.StaffID),
-      Medicine: Number(values.Medicine),
-      MedicineAmount: Number(values.MedicineAmount),
+      Medicine: Number(values.Medicine ?? selected?.Medicine ?? 0),
+      MedicineAmount: Number(values.MedicineAmount ?? selected?.MedicineAmount ?? 0),
       Doctor: String(values.Doctor || "").trim(),
     };
 
@@ -407,8 +410,6 @@ export default function PrisonerMedicalExam() {
     },
   ];
 
-  const isView = selected !== null && !isEditing;
-
   return (
     <div style={{ maxWidth: 1600, margin: "0 auto", padding: 20 }}>
       {notifyHolder /* ✅ ต้องมีเพื่อให้ toast โผล่มุมขวาล่าง */}
@@ -509,12 +510,16 @@ export default function PrisonerMedicalExam() {
             </Col>
 
             <Col span={12}>
-              <Form.Item label="ยาที่จ่าย" name="Medicine" rules={[{ required: isEditing, message: "กรุณาเลือกยา" }]}>
+              <Form.Item
+                label="ยาที่จ่าย"
+                name="Medicine"
+                rules={[{ required: isEditing && !selected, message: "กรุณาเลือกยา" }]} // ✅ ต้องกรอกเฉพาะตอนเพิ่ม
+              >
                 <Select
                   showSearch
                   placeholder="เลือกยา"
                   optionFilterProp="label"
-                  disabled={!isEditing}
+                  disabled={!isEditing || !!selected} // ✅ ปิดแก้ไขเมื่อแก้ไขข้อมูลเดิม
                 >
                   {parcels.map((p) => (
                     <Option key={p.PID} value={p.PID} label={p.ParcelName}>
@@ -529,9 +534,13 @@ export default function PrisonerMedicalExam() {
               <Form.Item
                 label="จำนวนยาที่จ่าย"
                 name="MedicineAmount"
-                rules={[{ required: isEditing, message: "กรุณาระบุจำนวนยา" }]}
+                rules={[{ required: isEditing && !selected, message: "กรุณาระบุจำนวนยา" }]} // ✅ ต้องกรอกเฉพาะตอนเพิ่ม
               >
-                <InputNumber min={1} style={{ width: "100%" }} disabled={!isEditing} />
+                <InputNumber
+                  min={1}
+                  style={{ width: "100%" }}
+                  disabled={!isEditing || !!selected} // ✅ ปิดแก้ไขเมื่อแก้ไขข้อมูลเดิม
+                />
               </Form.Item>
             </Col>
 
