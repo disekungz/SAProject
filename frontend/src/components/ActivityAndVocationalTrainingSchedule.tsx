@@ -1,7 +1,8 @@
 import { useState, useEffect, type FC } from "react";
 import {
-  Input, Button, Form, DatePicker, Typography, Row, Col, message,
+  Input, Button, Form, DatePicker, Typography, Row, Col,
   Table, Space, Modal, Popconfirm, Select, TimePicker, Tag, Dropdown,
+  notification, // ✅ 1. Import notification
 } from "antd";
 import {
   SearchOutlined, EditOutlined, DeleteOutlined, PlusOutlined,
@@ -29,7 +30,6 @@ interface PrisonerRecord {
   LastName: string;
 }
 
-// ✅ Changed to StaffRecord
 interface StaffRecord {
   StaffID: number;
   FirstName: string;
@@ -52,7 +52,7 @@ interface ActivityRecord {
     location: string;
     description: string;
   };
-  staff: StaffRecord; // ✅ Changed member to staff
+  staff: StaffRecord;
   startDate: Dayjs | null;
   endDate: Dayjs | null;
   startTime: string | null;
@@ -64,7 +64,7 @@ interface ActivityRecord {
 interface ActivityFormValues {
   activityName: string;
   description: string;
-  staffId: number; // ✅ Changed instructorId to staffId
+  staffId: number;
   dateRange: [Dayjs, Dayjs];
   timeRange: [Dayjs, Dayjs];
   room: string;
@@ -79,7 +79,6 @@ const mapPrisoner = (p: any): PrisonerRecord => ({
   LastName: p.LastName ?? p.lastName ?? "",
 });
 
-// ✅ Added mapStaff
 const mapStaff = (s: any): StaffRecord => ({
   StaffID: s.StaffID ?? s.staffId ?? s.id,
   FirstName: s.FirstName ?? s.firstName ?? "",
@@ -96,7 +95,7 @@ const mapEnrollment = (e: any): EnrollmentRecord => ({
 
 const mapSchedule = (s: any): ActivityRecord => {
   const act = s.activity ?? s.Activity ?? {};
-  const stf = s.staff ?? s.Staff ?? {}; // ✅ Changed mem to stf
+  const stf = s.staff ?? s.Staff ?? {};
   const enroll = s.enrollment ?? s.Enrollment ?? [];
   const startDate = s.startDate ?? s.StartDate ?? null;
   const endDate = s.endDate ?? s.EndDate ?? null;
@@ -109,7 +108,7 @@ const mapSchedule = (s: any): ActivityRecord => {
       location: act.location ?? act.Location ?? "",
       description: act.description ?? act.Description ?? "",
     },
-    staff: mapStaff(stf), // ✅ Use mapStaff
+    staff: mapStaff(stf),
     startDate: startDate ? dayjs(startDate) : null,
     endDate: endDate ? dayjs(endDate) : null,
     startTime: s.startTime ?? s.StartTime ?? null,
@@ -124,11 +123,25 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
   const [form] = Form.useForm<ActivityFormValues>();
   const [participantForm] = Form.useForm();
   const [withdrawalForm] = Form.useForm();
-  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null); // ✅ Re-added state for delete confirmation
+
+  // ✅ 2. Use notification hook
+  const [notify, contextHolder] = notification.useNotification();
+  
+  // ✅ 3. Create a toast helper
+  const toast = {
+    success: (msg: string, desc?: string) =>
+      notify.success({ message: msg, description: desc, placement: "bottomRight" }),
+    error: (msg: string, desc?: string) =>
+      notify.error({ message: msg, description: desc, placement: "bottomRight" }),
+    warning: (msg: string, desc?: string) =>
+      notify.warning({ message: msg, description: desc, placement: "bottomRight" }),
+  };
+
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
   const [data, setData] = useState<ActivityRecord[]>([]);
   const [filtered, setFiltered] = useState<ActivityRecord[]>([]);
   const [prisoners, setPrisoners] = useState<PrisonerRecord[]>([]);
-  const [staffs, setStaffs] = useState<StaffRecord[]>([]); // ✅ Changed members to staffs
+  const [staffs, setStaffs] = useState<StaffRecord[]>([]);
   const [searchValue, setSearchValue] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<ActivityRecord | null>(null);
@@ -146,7 +159,7 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
       setData(records);
       setFiltered(records);
     } catch {
-      message.error("ไม่สามารถโหลดข้อมูลตารางกิจกรรมได้");
+      toast.error("ไม่สามารถโหลดข้อมูลตารางกิจกรรมได้");
     }
   };
 
@@ -156,15 +169,15 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
       const [schedulesRes, prisonersRes, staffsRes] = await Promise.all([
         axios.get(`${BASE}/schedules`),
         axios.get(`${BASE}/prisoners`),
-        axios.get(`${BASE}/staffs`), // ✅ Fetch staffs
+        axios.get(`${BASE}/staffs`),
       ]);
       const schedules = (schedulesRes.data || []).map(mapSchedule);
       setData(schedules);
       setFiltered(schedules);
       setPrisoners((prisonersRes.data || []).map(mapPrisoner));
-      setStaffs((staffsRes.data || []).map(mapStaff)); // ✅ Set staffs
+      setStaffs((staffsRes.data || []).map(mapStaff));
     } catch {
-      message.error("ไม่สามารถโหลดข้อมูลได้");
+      toast.error("ไม่สามารถโหลดข้อมูลได้");
     } finally {
       setLoading(false);
     }
@@ -183,7 +196,7 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
     setFiltered(
       data.filter((r) => {
         const activityName = r.activity?.activityName?.toLowerCase() ?? "";
-        const staffName = `${r.staff?.FirstName ?? ""} ${r.staff?.LastName ?? ""}` // ✅ Search by staff name
+        const staffName = `${r.staff?.FirstName ?? ""} ${r.staff?.LastName ?? ""}`
           .trim()
           .toLowerCase();
         const location = r.activity?.location?.toLowerCase() ?? "";
@@ -208,7 +221,7 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
     form.setFieldsValue({
       activityName: record.activity.activityName,
       description: record.activity.description,
-      staffId: record.staff.StaffID, // ✅ Set staffId
+      staffId: record.staff.StaffID,
       room: record.activity.location,
       maxParticipants: record.max,
       dateRange: [
@@ -228,7 +241,7 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
       activityName: values.activityName,
       description: values.description,
       room: values.room,
-      staffId: values.staffId, // ✅ Send staffId
+      staffId: values.staffId,
       maxParticipants: Number(values.maxParticipants),
       startDate: values.dateRange?.[0] ? values.dateRange[0].toISOString() : null,
       endDate: values.dateRange?.[1] ? values.dateRange[1].toISOString() : null,
@@ -239,16 +252,16 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
       setLoading(true);
       if (editing) {
         await axios.put(`${BASE}/schedules/${editing.schedule_ID}`, payload);
-        message.success("ปรับปรุงข้อมูลกิจกรรมเรียบร้อย");
+        toast.success("ปรับปรุงข้อมูลสำเร็จ", "ข้อมูลกิจกรรมได้รับการอัปเดตแล้ว");
       } else {
         await axios.post(`${BASE}/schedules`, payload);
-        message.success("เพิ่มข้อมูลกิจกรรมเรียบร้อย");
+        toast.success("เพิ่มกิจกรรมสำเร็จ", "กิจกรรมใหม่ถูกเพิ่มในระบบเรียบร้อยแล้ว");
       }
       setModalOpen(false);
       await fetchSchedules();
     } catch (err: any) {
       const errorMessage = err?.response?.data?.error || "เกิดข้อผิดพลาดในการบันทึกข้อมูล";
-      message.error(errorMessage);
+      toast.error(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -258,10 +271,10 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
     try {
       setLoading(true);
       await axios.delete(`${BASE}/schedules/${scheduleId}`);
-      message.success("ลบข้อมูลกิจกรรมเรียบร้อย");
+      toast.success("ลบข้อมูลสำเร็จ");
       await fetchSchedules();
     } catch {
-      message.error("ไม่สามารถลบข้อมูลได้");
+      toast.error("ไม่สามารถลบข้อมูลได้");
     } finally {
       setLoading(false);
     }
@@ -281,7 +294,7 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
       if (updated) setCurrentActivity(updated);
       else setParticipantModalOpen(false);
     } catch {
-      message.error("ไม่สามารถรีเฟรชข้อมูลกิจกรรมได้");
+      toast.error("ไม่สามารถรีเฟรชข้อมูลกิจกรรมได้");
     }
   };
 
@@ -289,11 +302,11 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
     if (!currentActivity) return;
     const currentCount = (currentActivity.enrollment || []).filter((e) => e.status === 1).length;
     if (currentCount >= currentActivity.max) {
-      message.warning("กิจกรรมนี้มีผู้เข้าร่วมเต็มแล้ว");
+      toast.warning("กิจกรรมนี้มีผู้เข้าร่วมเต็มแล้ว");
       return;
     }
     if ((currentActivity.enrollment || []).some((e) => e.prisoner?.Prisoner_ID === values.prisonerId)) {
-      message.warning("ผู้ต้องขังคนนี้อยู่ในรายการแล้ว");
+      toast.warning("ผู้ต้องขังคนนี้อยู่ในรายการแล้ว");
       return;
     }
     try {
@@ -302,12 +315,12 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
         scheduleId: currentActivity.schedule_ID,
         prisonerId: values.prisonerId,
       });
-      message.success("เพิ่มผู้เข้าร่วมเรียบร้อย");
+      toast.success("เพิ่มผู้เข้าร่วมเรียบร้อย");
       participantForm.resetFields();
       await refreshDataAndUpdateCurrentActivity(currentActivity.schedule_ID);
     } catch (err: any) {
       const errorMessage = err?.response?.data?.error || "ไม่สามารถเพิ่มผู้เข้าร่วมได้";
-      message.error(errorMessage);
+      toast.error(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -327,12 +340,12 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
         status: 0,
         remarks: values.remarks,
       });
-      message.success("บันทึกการสละสิทธิ์เรียบร้อย");
+      toast.success("บันทึกการสละสิทธิ์เรียบร้อย");
       setWithdrawalModalOpen(false);
       await refreshDataAndUpdateCurrentActivity(currentActivity.schedule_ID);
     } catch (err: any) {
       const errorMessage = err?.response?.data?.error || "เกิดข้อผิดพลาดในการบันทึกสถานะ";
-      message.error(errorMessage);
+      toast.error(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -346,17 +359,16 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
         status: 1,
         remarks: "",
       });
-      message.success("เปลี่ยนสถานะเป็น 'เข้าร่วม' เรียบร้อย");
+      toast.success("เปลี่ยนสถานะเป็น 'เข้าร่วม' เรียบร้อย");
       await refreshDataAndUpdateCurrentActivity(currentActivity.schedule_ID);
     } catch (err: any) {
       const errorMessage = err?.response?.data?.error || "เกิดข้อผิดพลาดในการเปลี่ยนสถานะ";
-      message.error(errorMessage);
+      toast.error(errorMessage);
     } finally {
       setLoading(false);
     }
   };
   
-  // ✅ Refactored action menu. Delete now sets state.
   const actionMenuItems = (record: ActivityRecord): MenuProps["items"] => [
     {
       key: "edit",
@@ -380,7 +392,7 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
     { title: "เวลา", dataIndex: "startTime", width: 150, render: (_: any, r: ActivityRecord) => r.startTime && r.endTime ? `${dayjs(r.startTime, "HH:mm:ss").format("HH:mm")} - ${dayjs(r.endTime, "HH:mm:ss").format("HH:mm")}` : "-" },
     {
       title: "วิทยากร",
-      dataIndex: ["staff", "FirstName"], // ✅ Use staff data
+      dataIndex: ["staff", "FirstName"],
       render: (_: any, r: ActivityRecord) => `${r.staff?.FirstName || ""} ${r.staff?.LastName || ""}`.trim() || "-",
       width: 150,
     },
@@ -391,7 +403,6 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
       key: "actions",
       fixed: "right" as const,
       width: 150,
-      // ✅ Changed render logic to wrap Dropdown in Popconfirm
       render: (_: any, record: ActivityRecord) => (
         <Space>
           <Button icon={<EyeOutlined />} onClick={() => openParticipantModal(record)}>
@@ -452,6 +463,9 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
   // ---------- UI ----------
   return (
     <div style={{ padding: "24px", background: "#fff", minHeight: "100vh" }}>
+      {/* ✅ 4. Render the context holder */}
+      {contextHolder}
+
       <Row justify="space-between" align="middle" style={{ marginBottom: 24 }}>
         <Col>
           <Title level={3} style={{ margin: 0 }}>ตารางกิจกรรมและฝึกวิชาชีพ</Title>
@@ -549,4 +563,3 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
 };
 
 export default ActivityAndVocationalTrainingSchedule;
-
