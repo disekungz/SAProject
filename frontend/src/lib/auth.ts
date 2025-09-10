@@ -5,6 +5,7 @@ export type AuthUser = {
   firstName: string;
   lastName: string;
   rankId: number;
+  citizenId: string;
 };
 
 const TOKEN_KEY = "access_token";
