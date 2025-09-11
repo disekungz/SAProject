@@ -1,4 +1,3 @@
-// src/components/Petition.tsx
 import { useEffect, useMemo, useState } from "react";
 import {
   Input,
@@ -13,7 +12,7 @@ import {
   Modal,
   Popconfirm,
   Select,
-  message,
+  notification,
   Col,
   AutoComplete,
   Tag,
@@ -38,31 +37,12 @@ import { api } from "../lib/axios";
 const { Title } = Typography;
 const { Option } = Select;
 
-// --- Interfaces ---
+// --- Interfaces (คงเดิม) ---
 type ID = number;
-
-interface Inmate {
-  Prisoner_ID: ID;
-  FirstName: string;
-  LastName: string;
-}
-
-interface Staff {
-  StaffID: ID;
-  FirstName:string;
-  LastName: string;
-}
-
-interface Status {
-  Status_ID: ID;
-  Status: string;
-}
-
-interface PetitionTypeCum {
-  ID: ID;
-  Type_cum_name: string;
-}
-
+interface Inmate { Prisoner_ID: ID; FirstName: string; LastName: string; }
+interface Staff { StaffID: ID; FirstName:string; LastName: string; }
+interface Status { Status_ID: ID; Status: string; }
+interface Type_cum { ID: ID; Type_cum_name: string; }
 interface Petition {
   ID: ID;
   Detail: string;
@@ -74,9 +54,8 @@ interface Petition {
   Inmate?: Inmate;
   Staff?: Staff;
   Status?: Status;
-  Type?: PetitionTypeCum;
+  Type?: Type_cum;
 }
-
 interface PetitionForm {
   ID?: number;
   Detail: string;
@@ -90,13 +69,17 @@ interface PetitionForm {
 
 export default function Petition() {
   const user = getUser();
+  // ⭐️ แก้ไข: เพิ่ม isAdmin เพื่อการตรวจสอบสิทธิ์ที่ละเอียดขึ้น
   const isAdmin = user?.rankId === 1;
+  const isStaff = user?.rankId !== 3;
+  
+  const [notifyApi, contextHolder] = notification.useNotification();
 
   const [petitions, setPetitions] = useState<Petition[]>([]);
   const [inmates, setInmates] = useState<Inmate[]>([]);
   const [staffs, setStaffs] = useState<Staff[]>([]);
   const [statuses, setStatuses] = useState<Status[]>([]);
-  const [types, setTypes] = useState<PetitionTypeCum[]>([]);
+  const [types, setTypes] = useState<Type_cum[]>([]);
   const [form] = Form.useForm<PetitionForm>();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -107,7 +90,7 @@ export default function Petition() {
 
   const fetchData = async () => {
     try {
-      // vvv --- แก้ไขโดยการลบ /api/ ออก --- vvv
+      setLoading(true);
       const [inmateRes, staffRes, statusRes, typesRes, petitionRes] = await Promise.all([
         api.get("/prisoners"),
         api.get("/staffs"),
@@ -115,12 +98,11 @@ export default function Petition() {
         api.get("/typesc"),
         api.get("/petitions"),
       ]);
-      // ^^^ --------------------------------- ^^^
 
       const inmateData: Inmate[] = inmateRes.data || [];
       const staffData: Staff[] = staffRes.data || [];
       const statusData: Status[] = statusRes.data || [];
-      const typesData: PetitionTypeCum[] = typesRes.data || [];
+      const typesData: Type_cum[] = typesRes.data || [];
       const petitionData: Petition[] = petitionRes.data || [];
       
       const merged = petitionData.map((p) => ({
@@ -139,19 +121,23 @@ export default function Petition() {
       setFilteredPetitions(merged);
     } catch (error) {
       console.error("Fetch data error:", error);
-      message.error("ไม่สามารถดึงข้อมูลได้ (อาจเป็นปัญหาการยืนยันตัวตน)");
+      notifyApi.error({
+        message: "เกิดข้อผิดพลาด",
+        description: "ไม่สามารถดึงข้อมูลคำร้องได้ อาจเกิดปัญหาการเชื่อมต่อหรือการยืนยันตัวตน",
+      });
+    } finally {
+        setLoading(false);
     }
   };
 
   useEffect(() => {
     fetchData();
-    const intervalId = setInterval(() => fetchData(), 15000);
-    return () => clearInterval(intervalId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     if (open && !editingPetition && statuses.length > 0) {
-      const waitingStatus = statuses.find(st => st.Status === "รอ...");
+      const waitingStatus = statuses.find(st => st.Status === "รอ..." || st.Status === "รอดำเนินการ");
       if (waitingStatus) {
         form.setFieldsValue({ Status_ID: waitingStatus.Status_ID });
       }
@@ -195,6 +181,10 @@ export default function Petition() {
   const openAdd = () => {
     setEditingPetition(null);
     form.resetFields();
+    const waitingStatus = statuses.find(st => st.Status === "รอ..." || st.Status === "รอดำเนินการ");
+    if (waitingStatus) {
+      form.setFieldsValue({ Status_ID: waitingStatus.Status_ID });
+    }
     setOpen(true);
   };
 
@@ -218,38 +208,37 @@ export default function Petition() {
         Date_created: values.Date_created?.toISOString(),
       };
       delete (payload as any).Inmate_Input;
+
       if (editingPetition) {
-        // vvv --- แก้ไขโดยการลบ /api/ ออก --- vvv
         await api.put(`/petitions/${editingPetition.ID}`, payload);
-        message.success("แก้ไขคำร้องสำเร็จ");
+        notifyApi.success({ message: "สำเร็จ", description: "อัปเดตข้อมูลคำร้องเรียบร้อยแล้ว" });
       } else {
-        // vvv --- แก้ไขโดยการลบ /api/ ออก --- vvv
         await api.post("/petitions", payload);
-        message.success("เพิ่มคำร้องสำเร็จ");
+        notifyApi.success({ message: "สำเร็จ", description: "เพิ่มคำร้องใหม่เรียบร้อยแล้ว" });
       }
       setOpen(false);
       await fetchData();
-    } catch (error) {
-      message.error("เกิดข้อผิดพลาดในการบันทึกข้อมูล");
+    } catch (error: any) {
+      const errorMsg = error.response?.data?.error || "ไม่สามารถบันทึกข้อมูลคำร้องได้";
+      notifyApi.error({ message: "เกิดข้อผิดพลาด", description: errorMsg });
     } finally {
       setLoading(false);
     }
   };
 
-  const onFinishFailed = (errorInfo: any) => {
-    console.log('Validation Failed:', errorInfo);
-    message.error('กรุณากรอกข้อมูลให้ครบทุกช่องที่มีเครื่องหมาย *');
+  const onFinishFailed = () => {
+    notifyApi.warning({ message: "ข้อมูลไม่ครบถ้วน", description: "กรุณากรอกข้อมูลให้ครบทุกช่องที่มีเครื่องหมาย *" });
   };
 
   const handleDelete = async (id: number) => {
     try {
       setLoading(true);
-      // vvv --- แก้ไขโดยการลบ /api/ ออก --- vvv
       await api.delete(`/petitions/${id}`);
-      message.success("ลบคำร้องสำเร็จ");
+      notifyApi.success({ message: "สำเร็จ", description: "ลบข้อมูลคำร้องเรียบร้อยแล้ว" });
       await fetchData();
-    } catch (error) {
-      message.error("เกิดข้อผิดพลาดในการลบคำร้อง");
+    } catch (error: any) {
+        const errorMsg = error.response?.data?.error || "ไม่สามารถลบข้อมูลคำร้องได้";
+        notifyApi.error({ message: "เกิดข้อผิดพลาด", description: errorMsg });
     } finally {
       setLoading(false);
     }
@@ -269,17 +258,17 @@ export default function Petition() {
   const columns = useMemo(
     () => [
       { title: "ลำดับ", key: "index", render: (_: any, __: any, index: number) => index + 1, width: 70, align: 'center' as const },
-      { title: "ผู้ยื่นคำร้อง", render: (record: Petition) => <Space><Avatar icon={<UserOutlined />} /><span>{`${record.Inmate?.FirstName} ${record.Inmate?.LastName}`}</span></Space> },
+      { title: "ผู้ยื่นคำร้อง", render: (record: Petition) => <Space><Avatar icon={<UserOutlined />} /><span>{record.Inmate ? `${record.Inmate.FirstName} ${record.Inmate.LastName}` : 'N/A'}</span></Space> },
       { title: "ประเภท", dataIndex: ['Type', 'Type_cum_name'], render: (typeName: string) => getTypeTag(typeName) },
       { title: "สถานะ", dataIndex: ['Status', 'Status'], render: (status: string) => getStatusTag(status) },
       { title: "รายละเอียด", dataIndex: "Detail", ellipsis: true },
       { title: "วันที่ยื่น", dataIndex: "Date_created", render: (date: string) => (date ? dayjs(date).format("DD/MM/YYYY") : '-') },
-      { title: "เจ้าหน้าที่ผู้รับเรื่อง", render: (record: Petition) => <span>{`${record.Staff?.FirstName} ${record.Staff?.LastName}`}</span> },
+      { title: "เจ้าหน้าที่ผู้รับเรื่อง", render: (record: Petition) => <span>{record.Staff ? `${record.Staff.FirstName} ${record.Staff.LastName}` : 'N/A'}</span> },
       {
         title: "การจัดการ",
         key: "action",
         render: (record: Petition) => {
-          if (isAdmin) {
+          if (isStaff) {
             return (
               <Space>
                 <Button type="primary" ghost icon={<EditOutlined />} size="small" onClick={() => openEdit(record)}>แก้ไข</Button>
@@ -293,16 +282,18 @@ export default function Petition() {
         },
       },
     ],
-    [isAdmin],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [isStaff],
   );
 
   return (
     <div style={{ maxWidth: 1600, margin: "0 auto", padding: 20 }}>
+      {contextHolder}
       <Title level={2} style={{ color: "#1890ff" }}><FileTextOutlined /> ระบบยื่นคำร้องทั่วไป</Title>
       <Card style={{ marginBottom: 24 }}>
         <Row gutter={16}>
           <Col xs={18}><Input placeholder="ค้นหา..." prefix={<SearchOutlined />} allowClear value={searchValue} onChange={e => setSearchValue(e.target.value)} /></Col>
-          <Col xs={6}><Button type="primary" icon={<PlusOutlined />} onClick={openAdd} block>เพิ่มคำร้อง</Button></Col>
+          <Col xs={6}><Button type="primary" icon={<PlusOutlined />} onClick={openAdd} block disabled={!isStaff}>เพิ่มคำร้อง</Button></Col>
         </Row>
       </Card>
       <Card>
@@ -344,14 +335,21 @@ export default function Petition() {
               <Form.Item label="สถานะ" name="Status_ID" rules={[{ required: true, message: "กรุณาเลือกสถานะ" }]}>
                 <Select
                   placeholder="เลือกสถานะ"
-                  disabled={!editingPetition}
+                  disabled={!isStaff}
                 >
-                  {(editingPetition ? statuses : statuses.filter(st => st.Status === 'รอ...'))
-                    .map((st) => (
-                      <Option key={st.Status_ID} value={st.Status_ID}>
+                  {statuses.map((st) => {
+                    // ⭐️ เงื่อนไขใหม่:
+                    // 1. แอดมิน (isAdmin) สามารถเลือกได้ทุกสถานะ (option ไม่ถูก disable)
+                    // 2. ผู้คุม (!isAdmin แต่ isStaff) สามารถเลือกได้แค่สถานะ "รอ..."
+                    const isWaitingStatus = st.Status === "รอ..." || st.Status === "รอดำเนินการ";
+                    const optionDisabled = isStaff && !isAdmin && !isWaitingStatus;
+
+                    return (
+                      <Option key={st.Status_ID} value={st.Status_ID} disabled={optionDisabled}>
                         {st.Status}
                       </Option>
-                  ))}
+                    );
+                  })}
                 </Select>
               </Form.Item>
             </Col>
@@ -363,10 +361,11 @@ export default function Petition() {
           </Row>
           <div style={{ textAlign: "right", marginTop: 16 }}>
             <Button onClick={() => setOpen(false)} style={{ marginRight: 8 }}>ยกเลิก</Button>
-            <Button type="primary" htmlType="submit" loading={loading}>บันทึกข้อมูล</Button>
+            <Button type="primary" htmlType="submit" loading={loading} disabled={!isStaff}>บันทึกข้อมูล</Button>
           </div>
         </Form>
       </Modal>
     </div>
   );
 }
+
