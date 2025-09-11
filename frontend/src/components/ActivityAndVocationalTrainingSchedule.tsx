@@ -2,7 +2,7 @@ import { useState, useEffect, type FC } from "react";
 import {
   Input, Button, Form, DatePicker, Typography, Row, Col,
   Table, Space, Modal, Popconfirm, Select, TimePicker, Tag, Dropdown,
-  notification, // ✅ 1. Import notification
+  notification,
 } from "antd";
 import {
   SearchOutlined, EditOutlined, DeleteOutlined, PlusOutlined,
@@ -34,7 +34,7 @@ interface StaffRecord {
   StaffID: number;
   FirstName: string;
   LastName: string;
-  Status: string; 
+  Status: string;
 }
 
 interface EnrollmentRecord {
@@ -123,11 +123,9 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
   const [form] = Form.useForm<ActivityFormValues>();
   const [participantForm] = Form.useForm();
   const [withdrawalForm] = Form.useForm();
-
-  // ✅ 2. Use notification hook
+  
   const [notify, contextHolder] = notification.useNotification();
   
-  // ✅ 3. Create a toast helper
   const toast = {
     success: (msg: string, desc?: string) =>
       notify.success({ message: msg, description: desc, placement: "bottomRight" }),
@@ -385,24 +383,23 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
     },
   ];
 
+  // ✅ [SCROLLBAR FIX] Removed fixed widths and `fixed` property to make table responsive
   const columns = [
     { title: "ลำดับ", render: (_: any, __: any, idx: number) => <Text>{idx + 1}</Text>, width: 70 },
-    { title: "ชื่อกิจกรรม", dataIndex: ["activity", "activityName"], width: 200, render: (text: string) => <Text strong>{text || "-"}</Text> },
-    { title: "วันที่", dataIndex: "startDate", width: 180, render: (_: any, r: ActivityRecord) => r.startDate && r.endDate ? `${dayjs(r.startDate).format("DD/MM/YY")} - ${dayjs(r.endDate).format("DD/MM/YY")}` : "-" },
-    { title: "เวลา", dataIndex: "startTime", width: 150, render: (_: any, r: ActivityRecord) => r.startTime && r.endTime ? `${dayjs(r.startTime, "HH:mm:ss").format("HH:mm")} - ${dayjs(r.endTime, "HH:mm:ss").format("HH:mm")}` : "-" },
+    { title: "ชื่อกิจกรรม", dataIndex: ["activity", "activityName"], render: (text: string) => <Text strong>{text || "-"}</Text> },
+    { title: "วันที่", dataIndex: "startDate", render: (_: any, r: ActivityRecord) => r.startDate && r.endDate ? `${dayjs(r.startDate).format("DD/MM/YY")} - ${dayjs(r.endDate).format("DD/MM/YY")}` : "-" },
+    { title: "เวลา", dataIndex: "startTime", render: (_: any, r: ActivityRecord) => r.startTime && r.endTime ? `${dayjs(r.startTime, "HH:mm:ss").format("HH:mm")} - ${dayjs(r.endTime, "HH:mm:ss").format("HH:mm")}` : "-" },
     {
       title: "วิทยากร",
       dataIndex: ["staff", "FirstName"],
       render: (_: any, r: ActivityRecord) => `${r.staff?.FirstName || ""} ${r.staff?.LastName || ""}`.trim() || "-",
-      width: 150,
     },
-    { title: "สถานที่", dataIndex: ["activity", "location"], width: 120 },
-    { title: "จำนวน", width: 100, render: (_: any, r: ActivityRecord) => `${(r.enrollment || []).filter((e) => e.status === 1).length} / ${r.max}` },
+    { title: "สถานที่", dataIndex: ["activity", "location"] },
+    { title: "จำนวน", render: (_: any, r: ActivityRecord) => `${(r.enrollment || []).filter((e) => e.status === 1).length} / ${r.max}` },
     {
       title: "จัดการ",
       key: "actions",
-      fixed: "right" as const,
-      width: 150,
+      width: 150, // Keep width for action buttons for consistency
       render: (_: any, record: ActivityRecord) => (
         <Space>
           <Button icon={<EyeOutlined />} onClick={() => openParticipantModal(record)}>
@@ -462,8 +459,9 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
 
   // ---------- UI ----------
   return (
-    <div style={{ padding: "24px", background: "#fff", minHeight: "100vh" }}>
-      {/* ✅ 4. Render the context holder */}
+    // ✅ [SCROLLBAR FIX] Removed minHeight and background from here. 
+    // This should be handled by a parent Layout component.
+    <div style={{ padding: "24px" }}>
       {contextHolder}
 
       <Row justify="space-between" align="middle" style={{ marginBottom: 24 }}>
