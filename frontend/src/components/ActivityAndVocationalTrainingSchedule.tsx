@@ -288,36 +288,61 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
   };
 
   const handleConfirmWithdrawal = async (values: { remarks: string }) => {
-    if (!currentSchedule || !currentEnrollment) return;
-    try {
-      setLoading(true);
-      await axios.put(`${BASE}/enrollments/${currentEnrollment.enrollment_ID}/status`, {
-        status: 0,
-        remarks: values.remarks,
-      });
-      toast.success("บันทึกการสละสิทธิ์เรียบร้อย");
-      setWithdrawalModalOpen(false);
-      await fetchSchedules();
-    } catch (err: any) {
-      toast.error(err?.response?.data?.error || "เกิดข้อผิดพลาด");
-    } finally {
-      setLoading(false);
+  if (!currentSchedule || !currentEnrollment) return;
+  try {
+    setLoading(true);
+    await axios.put(`${BASE}/enrollments/${currentEnrollment.enrollment_ID}/status`, {
+      status: 0,
+      remarks: values.remarks,
+    });
+    toast.success("บันทึกการสละสิทธิ์เรียบร้อย");
+    setWithdrawalModalOpen(false);
+
+    // ✅ ดึงข้อมูลใหม่ทั้งหมดแล้วอัปเดต State ทันที
+    const scheduleResponse = await axios.get(`${BASE}/schedules`);
+    const allSchedules: ActivityRecord[] = (scheduleResponse.data || []).map(mapSchedule);
+    setData(allSchedules); // อัปเดต State หลัก
+
+    const updatedSchedule = allSchedules.find(s => s.schedule_ID === currentSchedule.schedule_ID);
+    if (updatedSchedule) {
+      setCurrentSchedule(updatedSchedule); // ✅ อัปเดต State ที่ Modal ใช้อยู่
     }
-  };
+
+  } catch (err: any) {
+    const errorMessage = err?.response?.data?.error || "เกิดข้อผิดพลาดในการบันทึกสถานะ";
+    toast.error(errorMessage);
+  } finally {
+    setLoading(false);
+  }
+};
 
   const handleSetToParticipated = async (enrollmentId: number) => {
-    if (!currentSchedule) return;
-    try {
-      setLoading(true);
-      await axios.put(`${BASE}/enrollments/${enrollmentId}/status`, { status: 1, remarks: "" });
-      toast.success("เปลี่ยนสถานะเป็น 'เข้าร่วม' เรียบร้อย");
-      await fetchSchedules();
-    } catch (err: any) {
-      toast.error(err?.response?.data?.error || "เกิดข้อผิดพลาด");
-    } finally {
-      setLoading(false);
+  if (!currentSchedule) return;
+  try {
+    setLoading(true);
+    await axios.put(`${BASE}/enrollments/${enrollmentId}/status`, {
+      status: 1,
+      remarks: "",
+    });
+    toast.success("เปลี่ยนสถานะเป็น 'เข้าร่วม' เรียบร้อย");
+
+    // ✅ ดึงข้อมูลใหม่ทั้งหมดแล้วอัปเดต State ทันที
+    const scheduleResponse = await axios.get(`${BASE}/schedules`);
+    const allSchedules: ActivityRecord[] = (scheduleResponse.data || []).map(mapSchedule);
+    setData(allSchedules); // อัปเดต State หลัก
+
+    const updatedSchedule = allSchedules.find(s => s.schedule_ID === currentSchedule.schedule_ID);
+    if (updatedSchedule) {
+      setCurrentSchedule(updatedSchedule); // ✅ อัปเดต State ที่ Modal ใช้อยู่
     }
-  };
+
+  } catch (err: any) {
+    const errorMessage = err?.response?.data?.error || "เกิดข้อผิดพลาดในการเปลี่ยนสถานะ";
+    toast.error(errorMessage);
+  } finally {
+    setLoading(false);
+  }
+};
 
   // --- Table Column Definitions ---
   const scheduleActionMenuItems = (record: ActivityRecord): MenuProps["items"] => [
