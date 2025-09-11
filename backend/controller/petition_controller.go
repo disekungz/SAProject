@@ -1,4 +1,3 @@
-// src/controller/petition_controller.go
 package controller
 
 import (
@@ -8,121 +7,155 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/sa-project/configs"
 	"github.com/sa-project/entity"
+	"gorm.io/gorm"
 )
 
+// PetitionInput defines the payload structure from the frontend
 type PetitionInput struct {
-	Detail       string    `json:"Detail"`
-	Date_created time.Time `json:"Date_created"`
-	Inmate_ID    uint      `json:"Inmate_ID"`
-	Staff_ID     uint      `json:"Staff_ID"`
-	Status_ID    uint      `json:"Status_ID"`
-	Type_cum_ID  uint      `json:"Type_cum_ID"`
+	Detail       string `json:"Detail"`
+	Date_created string `json:"Date_created"` // Received as string from frontend
+	Inmate_ID    uint   `json:"Inmate_ID"`
+	Staff_ID     uint   `json:"Staff_ID"`
+	Status_ID    uint   `json:"Status_ID"`
+	Type_cum_ID  uint   `json:"Type_cum_ID"`
 }
 
-func GetPetitions(c *gin.Context) {
-	var items []entity.Petition
-	if err := configs.DB().
-		Preload("Inmate").
-		Preload("Staff").
-		Preload("Status").
-		Preload("Type").
-		Find(&items).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch petitions"})
+// isStaff checks if the logged-in user is a staff member (not a relative, RankID 3)
+// file: petition_controller.go
+func isStaff(c *gin.Context) bool {
+	rankId, exists := c.Get("rankId")
+	if !exists {
+		return false
+	}
+	// แก้ไขให้รับค่าเป็น uint ให้ตรงกับที่ middleware ตั้งไว้
+	if id, ok := rankId.(uint); ok { // ✅ แก้ไขเป็น uint
+		// อนุญาตทุก Rank ID ที่ไม่ใช่ 3 (ญาติ)
+		return id != 3
+	}
+	return false
+}
+
+// POST /petitions
+func CreatePetition(c *gin.Context) {
+	if !isStaff(c) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "You are not authorized to perform this action."})
 		return
 	}
-	c.JSON(http.StatusOK, items)
-}
 
-func CreatePetition(c *gin.Context) {
 	var input PetitionInput
 	if err := c.ShouldBindJSON(&input); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body: " + err.Error()})
 		return
 	}
 
-	item := entity.Petition{
+	dateCreated, err := time.Parse(time.RFC3339, input.Date_created)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid date format. Please use ISO 8601 (toISOString)."})
+		return
+	}
+
+	petition := entity.Petition{
 		Detail:       input.Detail,
-		Date_created: input.Date_created,
+		Date_created: dateCreated,
 		Inmate_ID:    &input.Inmate_ID,
 		Staff_ID:     &input.Staff_ID,
 		Status_ID:    &input.Status_ID,
 		Type_cum_ID:  &input.Type_cum_ID,
 	}
 
-	configs.DB().Create(&item)
-	c.JSON(http.StatusCreated, item)
+	if err := configs.DB().Create(&petition).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create petition: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusCreated, petition)
 }
 
+// GET /petitions
+func GetPetitions(c *gin.Context) {
+	var petitions []entity.Petition
+	if err := configs.DB().
+		Preload("Inmate").
+		Preload("Staff").
+		Preload("Status").
+		Preload("Type").
+		Order("date_created desc").
+		Find(&petitions).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve petitions."})
+		return
+	}
+	c.JSON(http.StatusOK, petitions)
+}
+
+// PUT /petitions/:id
 func UpdatePetition(c *gin.Context) {
+	if !isStaff(c) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "You are not authorized to perform this action."})
+		return
+	}
+
 	id := c.Param("id")
-	var item entity.Petition
-	if err := configs.DB().First(&item, id).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Not found"})
+	var petition entity.Petition
+	if err := configs.DB().First(&petition, id).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Petition not found."})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error: " + err.Error()})
 		return
 	}
 
 	var input PetitionInput
 	if err := c.ShouldBindJSON(&input); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body: " + err.Error()})
 		return
 	}
 
-	item.Detail = input.Detail
-	item.Date_created = input.Date_created
-	item.Inmate_ID = &input.Inmate_ID
-	item.Staff_ID = &input.Staff_ID
-	item.Status_ID = &input.Status_ID
-	item.Type_cum_ID = &input.Type_cum_ID
-
-	configs.DB().Save(&item)
-	c.JSON(http.StatusOK, item)
-}
-
-func DeletePetition(c *gin.Context) {
-	id := c.Param("id")
-	configs.DB().Delete(&entity.Petition{}, id)
-	c.Status(http.StatusNoContent)
-}
-
-// Struct สำหรับรับข้อมูลการอัปเดตสถานะโดยเฉพาะ
-type PetitionStatusUpdateInput struct {
-	Status_ID uint `json:"Status_ID" binding:"required"`
-}
-
-// Function สำหรับอัปเดตสถานะของ Petition
-func UpdatePetitionStatus(c *gin.Context) {
-	id := c.Param("id")
-	var petition entity.Petition
-
-	// ค้นหา Petition ตาม ID ที่ส่งมา
-	if err := configs.DB().First(&petition, id).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Petition not found"})
+	dateCreated, err := time.Parse(time.RFC3339, input.Date_created)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid date format. Please use ISO 8601 (toISOString)."})
 		return
 	}
 
-	var input PetitionStatusUpdateInput
-	// รับค่า Status_ID ใหม่จาก request body
-	if err := c.ShouldBindJSON(&input); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	// อัปเดตเฉพาะ Status_ID
+	petition.Detail = input.Detail
+	petition.Date_created = dateCreated
+	petition.Inmate_ID = &input.Inmate_ID
+	petition.Staff_ID = &input.Staff_ID
 	petition.Status_ID = &input.Status_ID
+	petition.Type_cum_ID = &input.Type_cum_ID
 
-	// บันทึกการเปลี่ยนแปลงลงฐานข้อมูล
 	if err := configs.DB().Save(&petition).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update petition status"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update petition: " + err.Error()})
 		return
 	}
 
-	// ส่งข้อมูล Petition ที่อัปเดตแล้วกลับไป
 	c.JSON(http.StatusOK, petition)
 }
 
-// API สำหรับ dropdown (หากมี)
+// DELETE /petitions/:id
+func DeletePetition(c *gin.Context) {
+	if !isStaff(c) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "You are not authorized to perform this action."})
+		return
+	}
+
+	id := c.Param("id")
+	if err := configs.DB().Delete(&entity.Petition{}, id).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete petition."})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Petition deleted successfully."})
+}
+
+// GET /typesc (Petition Types for dropdowns)
 func GetTypeCums(c *gin.Context) {
+	// ⭐️ แก้ไข: ต้องใช้ชื่อ struct ที่ถูกต้องตาม entity ของคุณ
+	// สมมติว่าใน entity ชื่อ Type_cum หรือ PetitionTypeCum
 	var types []entity.Type_cum
-	configs.DB().Find(&types)
+	if err := configs.DB().Find(&types).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve petition types."})
+		return
+	}
 	c.JSON(http.StatusOK, types)
 }
