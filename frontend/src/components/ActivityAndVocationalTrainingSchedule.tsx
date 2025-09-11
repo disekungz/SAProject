@@ -11,9 +11,11 @@ import {
 import type { MenuProps } from "antd";
 import dayjs, { type Dayjs } from "dayjs";
 import localeData from "dayjs/plugin/localizedFormat";
+import isSameOrBefore from 'dayjs/plugin/isSameOrBefore';
 import axios from "axios";
 
 dayjs.extend(localeData);
+dayjs.extend(isSameOrBefore);
 
 const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
@@ -174,6 +176,51 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
   };
 
   const onFinishSchedule = async (values: ActivityScheduleFormValues) => {
+
+   //  3. [CHECK FOR OVERLAP] แก้ไขตรรกะการตรวจสอบทั้งหมด
+    const isOverlap = data.some(schedule => {
+      // ถ้ากำลังแก้ไข ให้ข้ามการตรวจสอบกับ ID ของตัวเอง
+      if (editingSchedule && schedule.schedule_ID === editingSchedule.schedule_ID) {
+        return false;
+      }
+
+      // 1. เช็คก่อนว่าเป็นกิจกรรมเดียวกันหรือไม่
+      if (schedule.activity.activity_ID !== values.activityId) {
+        return false; // ถ้าคนละกิจกรรม ก็ไม่ซ้ำแน่นอน
+      }
+
+      // 2. ตรวจสอบว่า "ช่วงวัน" ซ้อนทับกันหรือไม่
+      // (existing.start <= new.end) AND (new.start <= existing.end)
+      const existingStartDate = dayjs(schedule.startDate);
+      const existingEndDate = dayjs(schedule.endDate);
+      const newStartDate = values.dateRange[0];
+      const newEndDate = values.dateRange[1];
+      
+      const dateOverlaps = existingStartDate.isSameOrBefore(newEndDate) && newStartDate.isSameOrBefore(existingEndDate);
+
+      if (!dateOverlaps) {
+        return false; // ถ้าวันไม่ซ้อนกัน ก็ไม่ซ้ำแน่นอน
+      }
+
+      // 3. ตรวจสอบว่า "ช่วงเวลา" ซ้อนทับกันหรือไม่ (เมื่อวันซ้อนกันแล้ว)
+      // (existing.start < new.end) AND (new.start < existing.end)
+      const existingStartTime = schedule.startTime!;
+      const existingEndTime = schedule.endTime!;
+      const newStartTime = values.timeRange[0].format("HH:mm:ss");
+      const newEndTime = values.timeRange[1].format("HH:mm:ss");
+
+      const timeOverlaps = existingStartTime < newEndTime && newStartTime < existingEndTime;
+      
+      // ถ้าทั้งวันและเวลาซ้อนทับกัน ถือว่าเป็น Duplicate
+      return timeOverlaps;
+    });
+
+    if (isOverlap) {
+      toast.error("มีตารางเวลาซ้อนทับกัน", "กิจกรรมนี้มีช่วงวันและเวลาที่ซ้อนทับกับรายการอื่นอยู่แล้ว");
+      return; // หยุดการทำงาน
+    }
+    //  [END CHECK]
+
     const payload = {
       activityId: values.activityId,
       staffId: values.staffId,
