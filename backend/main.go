@@ -102,6 +102,10 @@ func main() {
 		api.GET("/scorebehavior/prisoner/:id", controller.GetScoreByPrisoner)
 
 		// --- Activity Schedule Routes ---
+		api.POST("/activities", controller.CreateActivity)
+		api.PUT("/activities/:id", controller.UpdateActivity)
+		api.DELETE("/activities/:id", controller.DeleteActivity)
+		api.GET("/activities", controller.GetActivities) 
 		api.GET("/schedules", controller.GetActivitySchedules)
 		api.POST("/schedules", controller.CreateActivitySchedule)
 		api.PUT("/schedules/:id", controller.UpdateActivitySchedule)
