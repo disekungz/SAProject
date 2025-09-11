@@ -131,7 +131,7 @@ export default function Visition() {
       setTimeSlots(timeSlotData);
     } catch (error) {
       console.error(error);
-      api.error({ message: "Error", description: "Could not load visitation data." });
+      api.error({ message: "เกิดข้อผิดพลาด", description: "ไม่สามารถโหลดข้อมูลการเยี่ยมได้" });
     } finally {
       setLoading(false);
     }
@@ -248,7 +248,7 @@ export default function Visition() {
     const token = getToken();
     try {
       if (isVisitor && !currentUser?.citizenId) {
-        api.error({ message: "Error", description: "User data not found. Please log in again." });
+        api.error({ message: "เกิดข้อผิดพลาด", description: "ไม่พบข้อมูลผู้ใช้ กรุณาเข้าสู่ระบบอีกครั้ง" });
         setLoading(false);
         return;
       }
@@ -284,10 +284,10 @@ export default function Visition() {
 
       if (editing) {
         await axios.put(`${API_URL}/visitations/${editing.ID}`, payload, authHeader);
-        api.success({ message: "สำเร็จ", description: "อัพเดทคำร้องการเยี่ยมแล้ว." });
+        api.success({ message: "สำเร็จ", description: "อัปเดตข้อมูลการเยี่ยมเรียบร้อยแล้ว" });
       } else {
         await axios.post(`${API_URL}/visitations`, payload, authHeader);
-        api.success({ message: "สำเร็จ", description: "สร้างคำร้องการเยี่ยมแล้ว.." });
+        api.success({ message: "สำเร็จ", description: "สร้างข้อมูลการเยี่ยมเรียบร้อยแล้ว" });
       }
 
       setOpen(false);
@@ -295,8 +295,8 @@ export default function Visition() {
       fetchData();
     } catch (error: any) {
       console.error(error);
-      const errorMessage = error.response?.data?.error || "An error occurred";
-      api.error({ message: "Error", description: errorMessage });
+      const errorMessage = error.response?.data?.error || "เกิดข้อผิดพลาดบางอย่าง";
+      api.error({ message: "เกิดข้อผิดพลาด", description: errorMessage });
     } finally {
       setLoading(false);
     }
@@ -306,11 +306,11 @@ export default function Visition() {
     const token = getToken();
     try {
       await axios.delete(`${API_URL}/visitations/${id}`, { headers: { Authorization: `Bearer ${token}` } });
-      api.success({ message: "สำเร็จ", description: "ลบคำร้องการเยี่ยมแล้ว.." });
+      api.success({ message: "สำเร็จ", description: "ลบข้อมูลการเยี่ยมเรียบร้อยแล้ว" });
       fetchData();
     } catch (error:any) {
-        const errorMessage = error.response?.data?.error || "Could not delete visitation";
-        api.error({ message: "Error", description: errorMessage });
+        const errorMessage = error.response?.data?.error || "ไม่สามารถลบข้อมูลการเยี่ยมได้";
+        api.error({ message: "เกิดข้อผิดพลาด", description: errorMessage });
     }
   };
 
@@ -324,22 +324,22 @@ export default function Visition() {
       case "ปฏิเสธ": case "ไม่อนุมัติ": return <Tag color="red">ปฏิเสธ</Tag>;
       case "รอดำเนินการ": case "รอ...": return <Tag color="blue">รอดำเนินการ</Tag>;
       case "สำเร็จ": return <Tag color="purple">สำเร็จ</Tag>;
-      default: return <Tag>{statusName || "N/A"}</Tag>;
+      default: return <Tag>{statusName || "ไม่ระบุ"}</Tag>;
     }
   };
 
   const columns = [
-    { title: "No.", key: "index", render: (_: any, __: any, idx: number) => idx + 1, width: 70 },
-    { title: "Inmate", render: (_: any, r: Visitation) => `${r.Inmate?.FirstName} ${r.Inmate?.LastName}` },
-    { title: "Visitor", render: (_: any, r: Visitation) => `${r.Visitor?.FirstName} ${r.Visitor?.LastName}` },
-    { title: "Citizen ID", render: (_: any, r: Visitation) => r.Visitor?.Citizen_ID },
-    { title: "Relationship", dataIndex: ["Relationship", "Relationship_name"] },
-    { title: "Staff", render: (_: any, r: Visitation) => `${r.Staff?.FirstName} ${r.Staff?.LastName}` },
-    { title: "Status", dataIndex: ["Status", "Status"], render: (status: string) => getStatusTag(status) },
-    { title: "Visit Date", dataIndex: "Visit_Date", render: (date: string) => dayjs(date).format("DD/MM/YYYY") },
-    { title: "Time Slot", dataIndex: ["TimeSlot", "TimeSlot_Name"] },
+    { title: "ลำดับ", key: "index", render: (_: any, __: any, idx: number) => idx + 1, width: 70 },
+    { title: "ผู้ต้องขัง", render: (_: any, r: Visitation) => `${r.Inmate?.FirstName} ${r.Inmate?.LastName}` },
+    { title: "ผู้เข้าเยี่ยม", render: (_: any, r: Visitation) => `${r.Visitor?.FirstName} ${r.Visitor?.LastName}` },
+    { title: "เลขบัตรประชาชน", render: (_: any, r: Visitation) => r.Visitor?.Citizen_ID },
+    { title: "ความสัมพันธ์", dataIndex: ["Relationship", "Relationship_name"] },
+    { title: "เจ้าหน้าที่", render: (_: any, r: Visitation) => `${r.Staff?.FirstName} ${r.Staff?.LastName}` },
+    { title: "สถานะ", dataIndex: ["Status", "Status"], render: (status: string) => getStatusTag(status) },
+    { title: "วันที่เข้าเยี่ยม", dataIndex: "Visit_Date", render: (date: string) => dayjs(date).format("DD/MM/YYYY") },
+    { title: "ช่วงเวลา", dataIndex: ["TimeSlot", "TimeSlot_Name"] },
     {
-      title: "Action",
+      title: "การจัดการ",
       key: "action",
       render: (_: any, r: Visitation) => {
         const canManage = !isVisitor || (currentUser?.citizenId === r.Visitor?.Citizen_ID);
@@ -351,7 +351,7 @@ export default function Visition() {
         return (
             <Space>
                 <Button type="primary" ghost icon={<EditOutlined />} size="small" onClick={() => openEdit(r)}>แก้ไข</Button>
-                <Popconfirm title="Confirm Delete?" onConfirm={() => handleDelete(r.ID)} okText="Confirm" cancelText="Cancel">
+                <Popconfirm title="ยืนยันการลบ?" onConfirm={() => handleDelete(r.ID)} okText="ยืนยัน" cancelText="ยกเลิก">
                     <Button icon={<DeleteOutlined />} size="small" danger>ลบคำร้อง</Button>
                 </Popconfirm>
             </Space>
@@ -374,7 +374,7 @@ export default function Visition() {
           <Row justify="end" style={{ marginBottom: 16 }}>
             <Col>
               <Input
-                placeholder="Search..."
+                placeholder="ค้นหา..."
                 prefix={<SearchOutlined />}
                 allowClear
                 value={searchValue}
@@ -393,21 +393,21 @@ export default function Visition() {
         </Card>
       </Content>
 
-      <Modal title={editing ? "Edit Visitation" : "Add Visitation"} open={open} onCancel={() => setOpen(false)} footer={null} width={700}>
+      <Modal title={editing ? "แก้ไขข้อมูลการเยี่ยม" : "เพิ่มข้อมูลการเยี่ยม"} open={open} onCancel={() => setOpen(false)} footer={null} width={700}>
         <Form form={form} layout="vertical" onFinish={onFinish} style={{ marginTop: 24 }}>
           <Row gutter={16}>
             <Col span={12}>
               <Form.Item
-                label="Inmate"
+                label="ผู้ต้องขัง"
                 name="Inmate_Input"
-                rules={[{ required: true, message: "Please select an inmate" }]}
+                rules={[{ required: true, message: "กรุณาเลือกผู้ต้องขัง" }]}
               >
                 <AutoComplete
                   options={inmateOptions}
                   onSearch={handleInmateSearch}
                   onSelect={onInmateSelect}
                   onChange={onInmateChange}
-                  placeholder="Search for an inmate..."
+                  placeholder="ค้นหาผู้ต้องขัง..."
                 />
               </Form.Item>
               <Form.Item name="Inmate_ID" hidden><Input /></Form.Item>
@@ -416,33 +416,33 @@ export default function Visition() {
             {!isVisitor && (
                 <>
                     <Col span={8}>
-                    <Form.Item label="Visitor First Name" name="VisitorFirstName" rules={[{ required: true, message: "Please enter first name" }]}>
-                        <Input placeholder="First Name" />
+                    <Form.Item label="ชื่อจริงผู้เข้าเยี่ยม" name="VisitorFirstName" rules={[{ required: true, message: "กรุณากรอกชื่อจริง" }]}>
+                        <Input placeholder="ชื่อจริง" />
                     </Form.Item>
                     </Col>
                     <Col span={8}>
-                    <Form.Item label="Visitor Last Name" name="VisitorLastName" rules={[{ required: true, message: "Please enter last name" }]}>
-                        <Input placeholder="Last Name" />
+                    <Form.Item label="นามสกุลผู้เข้าเยี่ยม" name="VisitorLastName" rules={[{ required: true, message: "กรุณากรอกนามสกุล" }]}>
+                        <Input placeholder="นามสกุล" />
                     </Form.Item>
                     </Col>
                     <Col span={8}>
-                    <Form.Item label="Visitor Citizen ID" name="VisitorCitizenID" rules={[{ required: true, message: "Please enter Citizen ID" }]}>
-                        <Input placeholder="Citizen ID" />
+                    <Form.Item label="เลขบัตรประชาชนผู้เข้าเยี่ยม" name="VisitorCitizenID" rules={[{ required: true, message: "กรุณากรอกเลขบัตรประชาชน" }]}>
+                        <Input placeholder="เลขบัตรประชาชน" />
                     </Form.Item>
                     </Col>
                 </>
             )}
 
             <Col span={12}>
-              <Form.Item label="Relationship" name="Relationship_ID" rules={[{ required: true, message: "Please select a relationship" }]}>
-                <Select placeholder="Select a relationship">
+              <Form.Item label="ความสัมพันธ์" name="Relationship_ID" rules={[{ required: true, message: "กรุณาเลือกความสัมพันธ์" }]}>
+                <Select placeholder="เลือกความสัมพันธ์">
                   {relationships.map(r => <Option key={r.ID} value={r.ID}>{r.Relationship_name}</Option>)}
                 </Select>
               </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item label="Staff" name="Staff_ID" rules={[{ required: true, message: "Please select a staff member" }]}>
-                <Select showSearch filterOption={(input, option) => String(option?.children).toLowerCase().includes(input.toLowerCase())} placeholder="Select a staff member">
+              <Form.Item label="เจ้าหน้าที่" name="Staff_ID" rules={[{ required: true, message: "กรุณาเลือกเจ้าหน้าที่" }]}>
+                <Select showSearch filterOption={(input, option) => String(option?.children).toLowerCase().includes(input.toLowerCase())} placeholder="เลือกเจ้าหน้าที่">
                   {staffs.map(s => <Option key={s.StaffID} value={s.StaffID}>{s.FirstName} {s.LastName}</Option>)}
                 </Select>
               </Form.Item>
@@ -451,11 +451,11 @@ export default function Visition() {
             {!isVisitor && (
                  <Col span={24}>
                  <Form.Item
-                    label="Status"
+                    label="สถานะ"
                     name="Status_ID"
-                    rules={[{ required: true, message: "Please select a status" }]}
+                    rules={[{ required: true, message: "กรุณาเลือกสถานะ" }]}
                     >
-                    <Select placeholder="Select a status">
+                    <Select placeholder="เลือกสถานะ">
                         {statuses.map(st => (
                             <Option key={st.Status_ID} value={st.Status_ID}>
                                 {st.Status}
@@ -467,13 +467,13 @@ export default function Visition() {
             )}
            
             <Col span={12}>
-              <Form.Item label="Visit Date" name="Visit_Date" rules={[{ required: true, message: "Please select a visit date" }]}>
+              <Form.Item label="วันที่เข้าเยี่ยม" name="Visit_Date" rules={[{ required: true, message: "กรุณาเลือกวันที่เข้าเยี่ยม" }]}>
                 <DatePicker style={{ width: "100%" }} format="DD/MM/YYYY" onChange={handleDateChange} disabledDate={disabledWeekend} />
               </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item label="Time Slot" name="TimeSlot_ID" rules={[{ required: true, message: "Please select a time slot" }]}>
-                <Select placeholder="Select a time slot">
+              <Form.Item label="ช่วงเวลา" name="TimeSlot_ID" rules={[{ required: true, message: "กรุณาเลือกช่วงเวลา" }]}>
+                <Select placeholder="เลือกช่วงเวลา">
                   {timeSlots.map(ts => <Option key={ts.ID} value={ts.ID} disabled={bookedSlots.includes(ts.ID)}>{ts.TimeSlot_Name}</Option>)}
                 </Select>
               </Form.Item>
@@ -482,8 +482,8 @@ export default function Visition() {
 
           <Row justify="end">
             <Space>
-              <Button onClick={() => setOpen(false)}>Cancel</Button>
-              <Button type="primary" htmlType="submit" loading={loading}>Save</Button>
+              <Button onClick={() => setOpen(false)}>ยกเลิก</Button>
+              <Button type="primary" htmlType="submit" loading={loading}>บันทึก</Button>
             </Space>
           </Row>
         </Form>
@@ -491,4 +491,3 @@ export default function Visition() {
     </Layout>
   );
 }
-
