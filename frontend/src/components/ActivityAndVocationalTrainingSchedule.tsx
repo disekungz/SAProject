@@ -31,25 +31,25 @@ interface ActivityRecord { schedule_ID: number; activity: ActivityMasterRecord; 
 interface ActivityScheduleFormValues { activityId: number; staffId: number; dateRange: [Dayjs, Dayjs]; timeRange: [Dayjs, Dayjs]; maxParticipants: number; }
 interface ActivityMasterFormValues { activityName: string; location: string; description: string; }
 
-// ---------- Mappers ----------
-const mapPrisoner = (p: any): PrisonerRecord => ({ Prisoner_ID: p.Prisoner_ID ?? 0, Inmate_ID: p.Inmate_ID ?? "", FirstName: p.FirstName ?? "", LastName: p.LastName ?? "", });
-const mapStaff = (s: any): StaffRecord => ({ StaffID: s.StaffID ?? 0, FirstName: s.FirstName ?? "", LastName: s.LastName ?? "", Status: s.Status ?? "", });
-const mapActivityMaster = (a: any): ActivityMasterRecord => ({ activity_ID: a.activity_ID ?? 0, activityName: a.activityName ?? "", description: a.description ?? "", location: a.location ?? "", });
-const mapEnrollment = (e: any): EnrollmentRecord => ({ enrollment_ID: e.enrollment_ID ?? 0, prisoner: e.prisoner ? mapPrisoner(e.prisoner) : {} as PrisonerRecord, status: e.status ?? 0, remarks: e.remarks ?? "", });
+// ---------- Mappers (ปรับปรุงให้ปลอดภัยขึ้น) ----------
+const mapPrisoner = (p: any): PrisonerRecord => ({ Prisoner_ID: p?.Prisoner_ID ?? 0, Inmate_ID: p?.Inmate_ID ?? "", FirstName: p?.FirstName ?? "", LastName: p?.LastName ?? "", });
+const mapStaff = (s: any): StaffRecord => ({ StaffID: s?.StaffID ?? 0, FirstName: s?.FirstName ?? "", LastName: s?.LastName ?? "", Status: s?.Status ?? "", });
+const mapActivityMaster = (a: any): ActivityMasterRecord => ({ activity_ID: a?.activity_ID ?? 0, activityName: a?.activityName ?? a?.ActivityName ?? "", description: a?.description ?? a?.Description ?? "", location: a?.location ?? a?.Location ?? "", });
+const mapEnrollment = (e: any): EnrollmentRecord => ({ enrollment_ID: e?.enrollment_ID ?? 0, prisoner: e?.prisoner ? mapPrisoner(e.prisoner) : {} as PrisonerRecord, status: e?.status ?? 0, remarks: e?.remarks ?? "", });
 
 const mapSchedule = (s: any): ActivityRecord => {
-  const act = s.activity ?? {};
-  const stf = s.staff ?? {};
-  const enroll = s.enrollment ?? [];
+  const act = s?.activity ?? {};
+  const stf = s?.staff ?? {};
+  const enroll = s?.enrollment ?? [];
   return {
-    schedule_ID: s.schedule_ID ?? 0,
+    schedule_ID: s?.schedule_ID ?? 0,
     activity: mapActivityMaster(act),
     staff: mapStaff(stf),
-    startDate: s.StartDate ? dayjs(s.StartDate) : null,
-    endDate: s.EndDate ? dayjs(s.EndDate) : null,
-    startTime: s.StartTime ?? null,
-    endTime: s.EndTime ?? null,
-    max: s.max ?? 0,
+    startDate: s?.StartDate ? dayjs(s.StartDate) : null,
+    endDate: s?.EndDate ? dayjs(s.EndDate) : null,
+    startTime: s?.StartTime ?? null,
+    endTime: s?.EndTime ?? null,
+    max: s?.max ?? 0,
     enrollment: Array.isArray(enroll) ? enroll.map(mapEnrollment) : [],
   };
 };
@@ -70,13 +70,15 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
 
   // Data states
   const [data, setData] = useState<ActivityRecord[]>([]);
-  const [filtered, setFiltered] = useState<ActivityRecord[]>([]);
+  const [filteredData, setFilteredData] = useState<ActivityRecord[]>([]);
   const [prisoners, setPrisoners] = useState<PrisonerRecord[]>([]);
   const [staffs, setStaffs] = useState<StaffRecord[]>([]);
   const [activities, setActivities] = useState<ActivityMasterRecord[]>([]);
+  const [filteredActivities, setFilteredActivities] = useState<ActivityMasterRecord[]>([]);
   
   // Modal & UI states
   const [searchValue, setSearchValue] = useState("");
+  const [activitySearchValue, setActivitySearchValue] = useState(""); 
   const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
   const [editingSchedule, setEditingSchedule] = useState<ActivityRecord | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
@@ -124,17 +126,13 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
     }
   };
 
-  useEffect(() => {
-    loadInitialData();
-  }, []);
+  useEffect(() => { loadInitialData(); }, []);
   
+  // Effect for filtering main schedule table
   useEffect(() => {
-    if (!searchValue) {
-      setFiltered(data);
-      return;
-    }
+    if (!searchValue) { setFilteredData(data); return; }
     const lower = searchValue.toLowerCase();
-    setFiltered(
+    setFilteredData(
       data.filter((r) => {
         const activityName = r.activity?.activityName?.toLowerCase() ?? "";
         const staffName = `${r.staff?.FirstName ?? ""} ${r.staff?.LastName ?? ""}`.trim().toLowerCase();
@@ -144,12 +142,24 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
     );
   }, [data, searchValue]);
 
+  
+  useEffect(() => {
+    if (!activitySearchValue) {
+        setFilteredActivities(activities);
+        return;
+    }
+    const lower = activitySearchValue.toLowerCase();
+    setFilteredActivities(
+        activities.filter(act =>
+            (act.activityName?.toLowerCase() ?? "").includes(lower) ||
+            (act.location?.toLowerCase() ?? "").includes(lower)
+        )
+    );
+}, [activities, activitySearchValue]);
+
+
   // ---------- Handlers for Schedule ----------
-  const openAddSchedule = () => {
-    scheduleForm.resetFields();
-    setEditingSchedule(null);
-    setScheduleModalOpen(true);
-  };
+  const openAddSchedule = () => { scheduleForm.resetFields(); setEditingSchedule(null); setScheduleModalOpen(true); };
 
   const openEditSchedule = (record: ActivityRecord) => {
     setEditingSchedule(record);
@@ -157,14 +167,8 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
       activityId: record.activity.activity_ID,
       staffId: record.staff.StaffID,
       maxParticipants: record.max,
-      dateRange: [
-        record.startDate ? dayjs(record.startDate) : dayjs(),
-        record.endDate ? dayjs(record.endDate) : dayjs(),
-      ],
-      timeRange: [
-        record.startTime ? dayjs(record.startTime, "HH:mm:ss") : dayjs("08:00", "HH:mm"),
-        record.endTime ? dayjs(record.endTime, "HH:mm:ss") : dayjs("10:00", "HH:mm"),
-      ],
+      dateRange: [ record.startDate ? dayjs(record.startDate) : dayjs(), record.endDate ? dayjs(record.endDate) : dayjs(), ],
+      timeRange: [ record.startTime ? dayjs(record.startTime, "HH:mm:ss") : dayjs("08:00", "HH:mm"), record.endTime ? dayjs(record.endTime, "HH:mm:ss") : dayjs("10:00", "HH:mm"), ],
     });
     setScheduleModalOpen(true);
   };
@@ -174,10 +178,10 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
       activityId: values.activityId,
       staffId: values.staffId,
       maxParticipants: Number(values.maxParticipants),
-      startDate: values.dateRange?.[0] ? values.dateRange[0].toISOString() : null,
-      endDate: values.dateRange?.[1] ? values.dateRange[1].toISOString() : null,
-      startTime: values.timeRange?.[0] ? values.timeRange[0].format("HH:mm:ss") : null,
-      endTime: values.timeRange?.[1] ? values.timeRange[1].format("HH:mm:ss") : null,
+      startDate: values.dateRange?.[0]?.toISOString() ?? null,
+      endDate: values.dateRange?.[1]?.toISOString() ?? null,
+      startTime: values.timeRange?.[0]?.format("HH:mm:ss") ?? null,
+      endTime: values.timeRange?.[1]?.format("HH:mm:ss") ?? null,
     };
     try {
       setLoading(true);
@@ -226,7 +230,7 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
         toast.success("สร้างกิจกรรมใหม่สำเร็จ");
       }
       setActivityFormModalOpen(false);
-      await fetchActivities();
+      await fetchActivities(); // Refresh list after create/update
     } catch (err: any) {
       toast.error(err?.response?.data?.error || "เกิดข้อผิดพลาด");
     } finally {
@@ -239,7 +243,7 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
     try {
       await axios.delete(`${BASE}/activities/${activityId}`);
       toast.success("ลบกิจกรรมสำเร็จ");
-      await fetchActivities();
+      await fetchActivities(); // Refresh list after delete
     } catch (err: any) {
       toast.error(err?.response?.data?.error || "ไม่สามารถลบกิจกรรมได้");
     } finally {
@@ -247,7 +251,17 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
     }
   };
   
-  // --- Handlers for Participants ---
+  // --- Handlers for Participants (Real-time Update Logic) ---
+  const refreshSchedulesAndUpdateCurrent = async (currentScheduleId: number) => {
+    const res = await axios.get(`${BASE}/schedules`);
+    const allSchedules: ActivityRecord[] = (res.data || []).map(mapSchedule);
+    setData(allSchedules);
+    const updatedSchedule = allSchedules.find(s => s.schedule_ID === currentScheduleId);
+    if (updatedSchedule) {
+      setCurrentSchedule(updatedSchedule);
+    }
+  }
+
   const openParticipantModal = (record: ActivityRecord) => { setCurrentSchedule(record); setParticipantModalOpen(true); };
   
   const handleAddParticipant = async (values: { prisonerId: number }) => {
@@ -257,23 +271,14 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
       return;
     }
     try {
-    setLoading(true);
-    await axios.post(`${BASE}/enrollments`, {
-      scheduleId: currentSchedule.schedule_ID,
-      prisonerId: values.prisonerId,
-    });
-    toast.success("เพิ่มผู้เข้าร่วมเรียบร้อย");
-    participantForm.resetFields();
-
-    // ✅ ขั้นตอนสำคัญ: ดึงข้อมูลทั้งหมดแล้วอัปเดต State ของ Modal ทันที
-    const scheduleResponse = await axios.get(`${BASE}/schedules`);
-    const allSchedules: ActivityRecord[] = (scheduleResponse.data || []).map(mapSchedule);
-    setData(allSchedules); // อัปเดต State หลัก
-
-    const updatedSchedule = allSchedules.find(s => s.schedule_ID === currentSchedule.schedule_ID);
-    if (updatedSchedule) {
-      setCurrentSchedule(updatedSchedule); // ✅ อัปเดต State ที่ Modal ใช้อยู่
-    }
+      setLoading(true);
+      await axios.post(`${BASE}/enrollments`, {
+        scheduleId: currentSchedule.schedule_ID,
+        prisonerId: values.prisonerId,
+      });
+      toast.success("เพิ่มผู้เข้าร่วมเรียบร้อย");
+      participantForm.resetFields();
+      await refreshSchedulesAndUpdateCurrent(currentSchedule.schedule_ID);
     } catch (err: any) {
       toast.error(err?.response?.data?.error || "ไม่สามารถเพิ่มผู้เข้าร่วมได้");
     } finally {
@@ -288,61 +293,39 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
   };
 
   const handleConfirmWithdrawal = async (values: { remarks: string }) => {
-  if (!currentSchedule || !currentEnrollment) return;
-  try {
-    setLoading(true);
-    await axios.put(`${BASE}/enrollments/${currentEnrollment.enrollment_ID}/status`, {
-      status: 0,
-      remarks: values.remarks,
-    });
-    toast.success("บันทึกการสละสิทธิ์เรียบร้อย");
-    setWithdrawalModalOpen(false);
-
-    // ✅ ดึงข้อมูลใหม่ทั้งหมดแล้วอัปเดต State ทันที
-    const scheduleResponse = await axios.get(`${BASE}/schedules`);
-    const allSchedules: ActivityRecord[] = (scheduleResponse.data || []).map(mapSchedule);
-    setData(allSchedules); // อัปเดต State หลัก
-
-    const updatedSchedule = allSchedules.find(s => s.schedule_ID === currentSchedule.schedule_ID);
-    if (updatedSchedule) {
-      setCurrentSchedule(updatedSchedule); // ✅ อัปเดต State ที่ Modal ใช้อยู่
+    if (!currentSchedule || !currentEnrollment) return;
+    try {
+      setLoading(true);
+      await axios.put(`${BASE}/enrollments/${currentEnrollment.enrollment_ID}/status`, {
+        status: 0,
+        remarks: values.remarks,
+      });
+      toast.success("บันทึกการสละสิทธิ์เรียบร้อย");
+      setWithdrawalModalOpen(false);
+      await refreshSchedulesAndUpdateCurrent(currentSchedule.schedule_ID);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error || "เกิดข้อผิดพลาดในการบันทึกสถานะ");
+    } finally {
+      setLoading(false);
     }
-
-  } catch (err: any) {
-    const errorMessage = err?.response?.data?.error || "เกิดข้อผิดพลาดในการบันทึกสถานะ";
-    toast.error(errorMessage);
-  } finally {
-    setLoading(false);
-  }
-};
+  };
 
   const handleSetToParticipated = async (enrollmentId: number) => {
-  if (!currentSchedule) return;
-  try {
-    setLoading(true);
-    await axios.put(`${BASE}/enrollments/${enrollmentId}/status`, {
-      status: 1,
-      remarks: "",
-    });
-    toast.success("เปลี่ยนสถานะเป็น 'เข้าร่วม' เรียบร้อย");
-
-    // ✅ ดึงข้อมูลใหม่ทั้งหมดแล้วอัปเดต State ทันที
-    const scheduleResponse = await axios.get(`${BASE}/schedules`);
-    const allSchedules: ActivityRecord[] = (scheduleResponse.data || []).map(mapSchedule);
-    setData(allSchedules); // อัปเดต State หลัก
-
-    const updatedSchedule = allSchedules.find(s => s.schedule_ID === currentSchedule.schedule_ID);
-    if (updatedSchedule) {
-      setCurrentSchedule(updatedSchedule); // ✅ อัปเดต State ที่ Modal ใช้อยู่
+    if (!currentSchedule) return;
+    try {
+      setLoading(true);
+      await axios.put(`${BASE}/enrollments/${enrollmentId}/status`, {
+        status: 1,
+        remarks: "",
+      });
+      toast.success("เปลี่ยนสถานะเป็น 'เข้าร่วม' เรียบร้อย");
+      await refreshSchedulesAndUpdateCurrent(currentSchedule.schedule_ID);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error || "เกิดข้อผิดพลาดในการเปลี่ยนสถานะ");
+    } finally {
+      setLoading(false);
     }
-
-  } catch (err: any) {
-    const errorMessage = err?.response?.data?.error || "เกิดข้อผิดพลาดในการเปลี่ยนสถานะ";
-    toast.error(errorMessage);
-  } finally {
-    setLoading(false);
-  }
-};
+  };
 
   // --- Table Column Definitions ---
   const scheduleActionMenuItems = (record: ActivityRecord): MenuProps["items"] => [
@@ -429,7 +412,7 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
         </Col>
       </Row>
 
-      <Table columns={scheduleColumns} dataSource={filtered} rowKey="schedule_ID" loading={loading} bordered />
+      <Table columns={scheduleColumns} dataSource={filteredData} rowKey="schedule_ID" loading={loading} bordered />
 
       <Modal title={editingSchedule ? "แก้ไขตารางเวลา" : "เพิ่มตารางเวลาใหม่"} open={scheduleModalOpen} onCancel={() => setScheduleModalOpen(false)} footer={null} width={900} destroyOnClose>
         <Form form={scheduleForm} layout="vertical" onFinish={onFinishSchedule} style={{ marginTop: 24 }}>
@@ -445,8 +428,23 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
       </Modal>
 
       <Modal title="จัดการกิจกรรมหลัก" open={activityManagementModalOpen} onCancel={() => setActivityManagementModalOpen(false)} footer={<Button onClick={() => setActivityManagementModalOpen(false)}>ปิด</Button>} width={1000}>
-        <Button type="primary" icon={<PlusOutlined />} style={{ marginBottom: 16, marginTop: 24 }} onClick={openAddActivityForm}>สร้างกิจกรรมใหม่</Button>
-        <Table loading={loading} columns={activityColumns} dataSource={activities} rowKey="activity_ID" bordered />
+       
+        <Row justify="space-between" align="middle" style={{ marginBottom: 16, marginTop: 24 }}>
+            <Col>
+                <Button type="primary" icon={<PlusOutlined />} onClick={openAddActivityForm}>สร้างกิจกรรมใหม่</Button>
+            </Col>
+            <Col>
+                <Input
+                    placeholder="ค้นหาชื่อกิจกรรม, สถานที่..."
+                    prefix={<SearchOutlined />}
+                    value={activitySearchValue}
+                    onChange={(e) => setActivitySearchValue(e.target.value)}
+                    style={{ width: 250 }}
+                    allowClear
+                />
+            </Col>
+        </Row>
+        <Table loading={loading} columns={activityColumns} dataSource={filteredActivities} rowKey="activity_ID" bordered />
       </Modal>
 
       <Modal title={editingActivity ? "แก้ไขกิจกรรม" : "สร้างกิจกรรมใหม่"} open={activityFormModalOpen} onCancel={() => setActivityFormModalOpen(false)} footer={null} destroyOnClose>
@@ -464,7 +462,7 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
             <Select showSearch placeholder="ค้นหาและเลือกผู้ต้องขัง (พิมพ์รหัส หรือ ชื่อ)" optionFilterProp="children" >
               {prisoners.map((p) => (
                 <Option key={p.Prisoner_ID} value={p.Prisoner_ID}>
-                  {p.Inmate_ID} - {p.FirstName} {p.LastName}
+                  {`${p.Inmate_ID} - ${p.FirstName} ${p.LastName}`}
                 </Option>
               ))}
             </Select>
