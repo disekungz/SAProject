@@ -158,6 +158,25 @@ func CreateActivitySchedule(c *gin.Context) {
 			return fmt.Errorf("activity with id %d not found", input.ActivityID)
 		}
 
+		//  ---- START: ตรวจสอบการซ้อนทับของวันและเวลา ----
+		var existingSchedule entity.ActivitySchedule
+		err := tx.Where(
+			"activity_id = ? AND end_date >= ? AND start_date <= ? AND end_time > ? AND start_time < ?",
+			input.ActivityID,
+			input.StartDate,  // existing.EndDate >= new.StartDate
+			input.EndDate,    // existing.StartDate <= new.EndDate
+			input.StartTime,  // existing.EndTime > new.StartTime
+			input.EndTime,    // existing.StartTime < new.EndTime
+		).First(&existingSchedule).Error
+
+		if err == nil {
+			return fmt.Errorf("ไม่สามารถเพิ่มได้: มีช่วงเวลาของกิจกรรมนี้ซ้อนทับกันอยู่")
+		}
+		if err != gorm.ErrRecordNotFound {
+			return err
+		}
+		//  ---- END: ตรวจสอบการซ้อนทับ ----
+
 		// Create the schedule
 		schedule := entity.ActivitySchedule{
 			StartDate:   input.StartDate,
@@ -213,6 +232,26 @@ func UpdateActivitySchedule(c *gin.Context) {
 		if err := tx.First(&entity.Activity{}, input.ActivityID).Error; err != nil {
 			return fmt.Errorf("activity with id %d not found", input.ActivityID)
 		}
+
+		//  ---- START: ตรวจสอบการซ้อนทับของวันและเวลา (ยกเว้น ID ของตัวเอง) ----
+		var existingSchedule entity.ActivitySchedule
+		err := tx.Where(
+			"activity_id = ? AND end_date >= ? AND start_date <= ? AND end_time > ? AND start_time < ? AND schedule_id != ?",
+			input.ActivityID,
+			input.StartDate,
+			input.EndDate,
+			input.StartTime,
+			input.EndTime,
+			id, // ID ของรายการที่กำลังแก้ไข
+		).First(&existingSchedule).Error
+
+		if err == nil {
+			return fmt.Errorf("ไม่สามารถแก้ไขได้: มีช่วงเวลาของกิจกรรมอื่นซ้อนทับกันอยู่")
+		}
+		if err != gorm.ErrRecordNotFound {
+			return err
+		}
+        //  ---- END: ตรวจสอบการซ้อนทับ ----
 
 		// Update Schedule fields
 		schedule.StartDate = input.StartDate
