@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import {
   Input, Button, Form, DatePicker, Typography, Row, Col,
   Table, Space, Modal, Popconfirm, Select, InputNumber, Dropdown,
-  notification, // ✅ 1. Import notification
+  notification,
 } from "antd";
 import {
   SearchOutlined, EditOutlined, DeleteOutlined, PlusOutlined, MoreOutlined,
@@ -97,10 +97,8 @@ export default function BehaviorEvaluation() {
   const currentUser = getUser();
   const [form] = Form.useForm<BehaviorEvaluationRecord>();
   
-  // ✅ 2. Use notification hook
   const [notify, contextHolder] = notification.useNotification();
   
-  // ✅ 3. Create a toast helper
   const toast = {
     success: (msg: string, desc?: string) =>
       notify.success({ message: msg, description: desc, placement: "bottomRight" }),
@@ -267,25 +265,24 @@ export default function BehaviorEvaluation() {
   };
 
   // ---------- Columns ----------
+  // ✅ [SCROLLBAR FIX] Removed fixed widths and `fixed` property to make table responsive
   const columns = [
     { title: "ลำดับ", key: "index", render: (_: any, __: any, index: number) => index + 1, width: 80 },
-    { title: "รหัสผู้ต้องขัง", dataIndex: "inmateId", width: 120 },
-    { title: "ชื่อ-นามสกุล", dataIndex: "prisonerName", width: 180, render: (text: string) => <Text strong>{text}</Text> },
+    { title: "รหัสผู้ต้องขัง", dataIndex: "inmateId" },
+    { title: "ชื่อ-นามสกุล", dataIndex: "prisonerName", render: (text: string) => <Text strong>{text}</Text> },
     {
       title: "วันที่ประเมิน",
       dataIndex: "evaluationDate",
       render: (d: Dayjs | null) => (d ? dayjs(d).format("DD/MM/YYYY") : "-"),
-      width: 120,
     },
-    { title: "คะแนนปัจจุบัน", dataIndex: "behaviorScore", width: 120 },
-    { title: "ระดับพฤติกรรม", dataIndex: "behaviorDescription", width: 150 },
+    { title: "คะแนนปัจจุบัน", dataIndex: "behaviorScore" },
+    { title: "ระดับพฤติกรรม", dataIndex: "behaviorDescription" },
     { title: "หมายเหตุ", dataIndex: "notes" },
-    { title: "ผู้ประเมิน", dataIndex: "recordedBy", width: 180 },
+    { title: "ผู้ประเมิน", dataIndex: "recordedBy" },
     {
       title: "จัดการ",
       key: "actions",
       width: 100,
-      fixed: "right" as const,
       render: (_: any, record: BehaviorEvaluationRecord) => {
         const items = [
           {
@@ -326,8 +323,8 @@ export default function BehaviorEvaluation() {
 
   // ---------- UI ----------
   return (
-    <div style={{ padding: 24, background: "#fff", minHeight: "100vh" }}>
-      {/* ✅ 4. Render the context holder */}
+    // ✅ [SCROLLBAR FIX] Removed minHeight and background. Let the parent Layout handle this.
+    <div style={{ padding: 24 }}>
       {contextHolder}
       
       <Row justify="space-between" align="middle" style={{ marginBottom: 24 }}>
