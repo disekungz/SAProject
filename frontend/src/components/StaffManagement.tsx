@@ -103,8 +103,6 @@ const getGenderText = (r: Staff, genders: Gender[]) => {
 
 /* =========================
  * Status TEXT toggle (ตาราง)
- * - เลือกอันไหน อันนั้นมีสี (เขียว/แดง) อีกอันเป็นสีเทา
- * - ไม่มีพื้นหลัง/กรอบ
  * =======================*/
 function StatusPillToggle({
   value,
@@ -179,7 +177,10 @@ export default function StaffManagement() {
     status: WorkStatus | undefined;
   }>({ query: "", gender: undefined, status: undefined });
 
-  // View/Edit/Add Modal states (อ้างอิง flow ระบบตรวจโรค)
+  // pagination (ควบคุมเองสำหรับคอลัมน์ลำดับ)
+  const [page, setPage] = useState({ current: 1, pageSize: 10 });
+
+  // View/Edit/Add Modal states
   const [modalOpen, setModalOpen] = useState(false);
   const [selected, setSelected] = useState<Staff | null>(null);
   const [isEditing, setIsEditing] = useState(false); // false = view
@@ -259,7 +260,6 @@ export default function StaffManagement() {
     toast.success("ล้างตัวกรองทั้งหมดแล้ว");
   };
 
-  // เปิดโหมดเพิ่ม (อ้างอิงระบบตรวจโรค)
   const openAdd = () => {
     form.resetFields();
     setSelected(null);
@@ -267,7 +267,6 @@ export default function StaffManagement() {
     setModalOpen(true);
   };
 
-  // เปิดโหมดดู (read-only) แบบเดียวกับระบบตรวจโรค
   const openView = (record: Staff) => {
     setSelected(record);
     setIsEditing(false);
@@ -320,7 +319,7 @@ export default function StaffManagement() {
     setLoading((prev) => ({ ...prev, submit: true }));
     try {
       if (selected && isEditing) {
-        // แก้ไข (ห้ามแก้สถานะในหน้าแก้ไข -> ใช้สถานะเดิม)
+        // แก้ไข (สถานะใช้ของเดิม)
         const payload = toPayload({ ...values, Status: selected.Status });
         await axios.put(`${API_BASE}/staffs/${selected.StaffID}`, payload);
         toast.success("แก้ไขข้อมูลสำเร็จ");
@@ -346,6 +345,15 @@ export default function StaffManagement() {
 
   /* ---------- Table Columns ---------- */
   const columns: ColumnsType<Staff> = [
+    {
+      title: "ลำดับ",
+      key: "rowIndex",
+      width: 80,
+      align: "center",
+      fixed: "left",
+      render: (_: any, __: Staff, idx: number) =>
+        (page.current - 1) * page.pageSize + idx + 1,
+    },
     {
       title: "เจ้าหน้าที่",
       key: "staffInfo",
@@ -420,7 +428,6 @@ export default function StaffManagement() {
       fixed: "right",
       render: (_, record) => (
         <Space size="small">
-          {/* เปลี่ยนจาก แก้ไข → ดู (อ้างอิงอีกระบบ) */}
           <Button icon={<EyeOutlined />} type="primary" ghost size="small" onClick={() => openView(record)}>
             ดู
           </Button>
@@ -445,7 +452,7 @@ export default function StaffManagement() {
     <div style={LAYOUT.page}>
       {notifyHolder}
 
-      {/* --- styles ของ toggle แบบตัวหนังสือ --- */}
+      {/* styles ของ toggle แบบตัวหนังสือ */}
       <style>{`
         .status-toggle-wrap {
           position: relative;
@@ -557,16 +564,23 @@ export default function StaffManagement() {
           loading={loading.table}
           locale={{ emptyText: <Empty description="ไม่พบข้อมูลเจ้าหน้าที่" /> }}
           pagination={{
+            current: page.current,
+            pageSize: page.pageSize,
             showTotal: (total, range) => `แสดง ${range[0]}-${range[1]} จาก ${total} รายการ`,
-            defaultPageSize: 10,
             pageSizeOptions: ["10", "20", "50"],
             showSizeChanger: true,
+            onChange: (current, pageSize) => setPage({ current, pageSize }),
+            onShowSizeChange: (_, pageSize) => setPage({ current: 1, pageSize }),
+          }}
+          onChange={(pagination) => {
+            const { current = 1, pageSize = page.pageSize } = pagination;
+            setPage({ current, pageSize });
           }}
           scroll={LAYOUT.tableScroll}
         />
       </Card>
 
-      {/* Modal: เพิ่ม/ดู/แก้ไข (Reference Style) */}
+      {/* Modal: เพิ่ม/ดู/แก้ไข */}
       <Modal
         title={
           isView ? "ดูข้อมูลเจ้าหน้าที่" : (selected ? "แก้ไขข้อมูลเจ้าหน้าที่" : "เพิ่มเจ้าหน้าที่")
@@ -579,7 +593,6 @@ export default function StaffManagement() {
         centered
       >
         <Form form={form} layout="vertical" onFinish={onFinish}>
-          {/* แถบข้อมูลส่วนหัว/สถานะในมุมมอง (แสดงสถานะเป็นตัวหนังสือ; ถ้า view = กดไม่ได้) */}
           {selected && (
             <div style={{ marginBottom: 12, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -592,7 +605,6 @@ export default function StaffManagement() {
                 </div>
               </div>
 
-              {/* สถานะ (disabled ใน view และ edit modal ตามข้อกำชับเดิม) */}
               <StatusPillToggle
                 value={selected.Status}
                 onChange={() => {}}
@@ -630,7 +642,6 @@ export default function StaffManagement() {
               </Form.Item>
             </Col>
 
-            {/* สถานะการทำงาน: แสดงเฉพาะตอนเพิ่มใหม่ เท่านั้น (ตามข้อกำชับเดิม) */}
             {!selected && isEditing && (
               <Col xs={24} sm={12}>
                 <Form.Item
@@ -663,7 +674,6 @@ export default function StaffManagement() {
             </Col>
           </Row>
 
-          {/* Footer แบบเดียวกับอีกระบบ: ปุ่มแก้ไขในหน้า “ดู” / ปุ่มยกเลิก-บันทึกในหน้า เพิ่ม/แก้ไข */}
           <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
             {selected && isView ? (
               <Button onClick={() => setIsEditing(true)} icon={<EditOutlined />}>
