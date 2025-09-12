@@ -23,6 +23,7 @@ import {
   PlusOutlined,
 } from "@ant-design/icons";
 import axios from "axios";
+import { getUser } from "../lib/auth"; // 1. เพิ่ม import
 
 const { Title } = Typography;
 const { Option } = Select;
@@ -43,6 +44,9 @@ interface RoomFormValues {
 const API_URL = "http://localhost:8088/api";
 
 export default function RoomManagement() {
+  const user = getUser(); // 2. ดึงข้อมูล user
+  const isStaff = user?.rankId === 2; // 3. สร้างตัวแปรเช็ค Role
+
   const [form] = Form.useForm<RoomFormValues>();
   const [rooms, setRooms] = useState<Room[]>([]);
   const [filteredRooms, setFilteredRooms] = useState<Room[]>([]);
@@ -50,6 +54,7 @@ export default function RoomManagement() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingRoom, setEditingRoom] = useState<Room | null>(null);
   const [tableLoading, setTableLoading] = useState(false);
+  const [viewOnly, setViewOnly] = useState(false); // 4. เพิ่ม state
 
   const fetchData = async () => {
     setTableLoading(true);
@@ -93,6 +98,7 @@ export default function RoomManagement() {
 
   const openAdd = () => {
     setEditingRoom(null);
+    setViewOnly(false);
     form.resetFields();
     form.setFieldsValue({ gender: "M", zone: "A" });
     const nextNumber = generateNextRoomNumber("M", "A");
@@ -175,18 +181,27 @@ export default function RoomManagement() {
           <Button
             icon={<EditOutlined />}
             size="small"
-            onClick={() => openEdit(record)}
+            onClick={() => {
+              if (isStaff) {
+                setViewOnly(true);
+              } else {
+                setViewOnly(false);
+              }
+              openEdit(record);
+            }}
           >
-            แก้ไข
+            {isStaff ? "ดูรายละเอียด" : "แก้ไข"}
           </Button>
-          <Popconfirm
-            title="แน่ใจหรือไม่ว่าจะลบ?"
-            onConfirm={() => handleDelete(record.Room_ID)}
-          >
-            <Button icon={<DeleteOutlined />} size="small" danger>
-              ลบ
-            </Button>
-          </Popconfirm>
+          {!isStaff && (
+            <Popconfirm
+              title="แน่ใจหรือไม่ว่าจะลบ?"
+              onConfirm={() => handleDelete(record.Room_ID)}
+            >
+              <Button icon={<DeleteOutlined />} size="small" danger>
+                ลบ
+              </Button>
+            </Popconfirm>
+          )}
         </Space>
       ),
     },
@@ -207,9 +222,11 @@ export default function RoomManagement() {
             />
           </Col>
           <Col>
-            <Button type="primary" icon={<PlusOutlined />} onClick={openAdd}>
-              เพิ่มห้องขัง
-            </Button>
+            {!isStaff && (
+              <Button type="primary" icon={<PlusOutlined />} onClick={openAdd}>
+                เพิ่มห้องขัง
+              </Button>
+            )}
           </Col>
         </Row>
       </Card>
@@ -223,7 +240,13 @@ export default function RoomManagement() {
         />
       </Card>
       <Modal
-        title={editingRoom ? "แก้ไขข้อมูลห้องขัง" : "เพิ่มข้อมูลห้องขัง"}
+        title={
+          editingRoom
+            ? viewOnly
+              ? "รายละเอียดห้องขัง"
+              : "แก้ไขข้อมูลห้องขัง"
+            : "เพิ่มข้อมูลห้องขัง"
+        }
         open={modalOpen}
         onCancel={() => setModalOpen(false)}
         footer={null}
@@ -243,7 +266,7 @@ export default function RoomManagement() {
                 name="gender"
                 rules={[{ required: true, message: "กรุณาเลือกเพศ" }]}
               >
-                <Select placeholder="เลือกเพศ">
+                <Select placeholder="เลือกเพศ" disabled={viewOnly}>
                   <Option value="M">M (Male)</Option>
                   <Option value="F">F (Female)</Option>
                 </Select>
@@ -255,7 +278,7 @@ export default function RoomManagement() {
                 name="zone"
                 rules={[{ required: true, message: "กรุณาเลือกโซน" }]}
               >
-                <Select placeholder="เลือกโซน">
+                <Select placeholder="เลือกโซน" disabled={viewOnly}>
                   {zones.map((z) => (
                     <Option key={z} value={z}>
                       {z}
@@ -272,10 +295,14 @@ export default function RoomManagement() {
           </Row>
           <div style={{ textAlign: "right", marginTop: 16 }}>
             <Space>
-              <Button onClick={() => setModalOpen(false)}>ยกเลิก</Button>
-              <Button type="primary" htmlType="submit">
-                {editingRoom ? "บันทึกการแก้ไข" : "เพิ่มข้อมูล"}
+              <Button onClick={() => setModalOpen(false)}>
+                {viewOnly ? "ปิด" : "ยกเลิก"}
               </Button>
+              {!viewOnly && (
+                <Button type="primary" htmlType="submit">
+                  {editingRoom ? "บันทึกการแก้ไข" : "เพิ่มข้อมูล"}
+                </Button>
+              )}
             </Space>
           </div>
         </Form>
