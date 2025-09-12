@@ -11,26 +11,31 @@ import (
 
 func AuthOptional() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		auth := c.GetHeader("Authorization")
-		if strings.HasPrefix(auth, "Bearer ") {
-			tokenStr := strings.TrimPrefix(auth, "Bearer ")
+		auth := strings.TrimSpace(c.GetHeader("Authorization"))
+		if strings.HasPrefix(strings.ToLower(auth), "bearer ") {
+			tokenStr := strings.TrimSpace(auth[7:]) // ตัด "Bearer "
 			claims := jwt.MapClaims{}
 			tkn, err := jwt.ParseWithClaims(tokenStr, claims, func(t *jwt.Token) (interface{}, error) {
 				return configs.JWTSecret(), nil
 			})
 			if err == nil && tkn.Valid {
-				// --- ส่วนที่แก้ไข ---
-				// ดึงค่าต่างๆ จาก claims แล้ว Set เข้าไปใน Context
-				if mid, ok := claims["mid"].(float64); ok {
-					c.Set("memberID", uint(mid))
+				// mid ใน JWT ปกติเป็น number(float64) -> แปลงเป็น int
+				if v, ok := claims["mid"]; ok {
+					switch x := v.(type) {
+					case float64:
+						c.Set("mid", int(x))      // ✅ คีย์ที่ controller ใช้
+						c.Set("memberID", int(x)) // (เผื่อโค้ดเก่า)
+					case int:
+						c.Set("mid", x)
+						c.Set("memberID", x)
+					}
 				}
-				if rankId, ok := claims["rankId"].(float64); ok {
-					c.Set("rankId", uint(rankId))
+				if v, ok := claims["rankId"].(float64); ok {
+					c.Set("rankId", int(v))
 				}
-				if citizenId, ok := claims["citizenId"].(string); ok {
-					c.Set("citizenId", citizenId)
+				if v, ok := claims["citizenId"].(string); ok {
+					c.Set("citizenId", v)
 				}
-				// --- สิ้นสุดส่วนที่แก้ไข ---
 			}
 		}
 		c.Next()
@@ -39,10 +44,12 @@ func AuthOptional() gin.HandlerFunc {
 
 func AuthRequired() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// เปลี่ยน key ที่ตรวจสอบเป็น "memberID" ให้ตรงกับที่ Set ไว้
-		if _, ok := c.Get("memberID"); !ok {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
-			return
+		// ยอมรับทั้ง "mid" และ "memberID" เพื่อความเข้ากันได้
+		if _, ok := c.Get("mid"); !ok {
+			if _, ok2 := c.Get("memberID"); !ok2 {
+				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+				return
+			}
 		}
 		c.Next()
 	}
