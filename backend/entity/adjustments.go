@@ -1,25 +1,26 @@
 package entity
 
-import (
-	"time"
-)
+import "time"
 
 type Adjustment struct {
-	AID      int       `gorm:"primaryKey" json:"Adjustment_ID"`
-	OldScore int       `gorm:"not null" json:"OldScore"` // เปลี่ยนเป็น OldScore
-	NewScore int       `gorm:"not null" json:"NewScore"` // เปลี่ยนเป็น NewScore
-	Date     time.Time `gorm:"not null" json:"Date"`
-	Remarks  *string   `gorm:"type:text" json:"Remarks"`
+	AID      int       `gorm:"column:a_id;primaryKey" json:"Adjustment_ID"`
+	OldScore int       `gorm:"column:old_score;not null" json:"OldScore"`
+	NewScore int       `gorm:"column:new_score;not null" json:"NewScore"`
+	Date     time.Time `gorm:"column:date;not null" json:"Date"`
+	Remarks  *string   `gorm:"column:remarks;type:text" json:"Remarks"`
 
-	// SID ทำหน้าที่เป็น FK ไปยัง ScoreBehavior
-	SID           *uint
-	ScoreBehavior ScoreBehavior `gorm:"foreignKey:SID" json:"ScoreBehavior"`
+	// FK -> ScoreBehavior
+	SID           *uint         `gorm:"column:sid"`
+	ScoreBehavior ScoreBehavior `gorm:"foreignKey:SID;references:SID" json:"ScoreBehavior"`
 
-	// Prisoner_ID ทำหน้าที่เป็น FK ไปยัง Prisoner
-	Prisoner_ID uint     `json:"Prisoner_ID"`
-	Prisoner    Prisoner `gorm:"foreignKey:Prisoner_ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;" json:"Prisoner"`
+	// FK -> Prisoner
+	Prisoner_ID uint     `gorm:"column:prisoner_id;not null" json:"Prisoner_ID"`
+	Prisoner    Prisoner `gorm:"foreignKey:Prisoner_ID;references:Prisoner_ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;" json:"Prisoner"`
 
-	// MID ทำหน้าที่เป็น FK ไปยัง Member
-	MID    *uint  `json:"MID"`
+	// FK -> Member (สำคัญ: column ต้องเป็น m_id)
+	MID    *int   `gorm:"column:m_id" json:"MID"`
 	Member Member `gorm:"foreignKey:MID;references:MID" json:"Member"`
 }
+
+// ถ้าชื่อตารางเป็น "adjustments" อยู่แล้ว ไม่ต้องใส่ก็ได้
+// func (Adjustment) TableName() string { return "adjustments" }
