@@ -25,7 +25,8 @@ import {
 } from "@ant-design/icons";
 import axios from "axios";
 import dayjs, { Dayjs } from "dayjs";
-import "dayjs/locale/th"; // For Thai locale if needed
+import "dayjs/locale/th";
+import { getUser } from "../lib/auth"; // 1. เพิ่ม import
 
 dayjs.locale("th");
 
@@ -50,8 +51,8 @@ interface Work {
 }
 
 interface Prisoner {
-  Prisoner_ID: number; // PK (ตัวเลข)
-  Inmate_ID: string; // ID ที่แสดงผล (P-XXXX)
+  Prisoner_ID: number;
+  Inmate_ID: string;
   Citizen_ID: string;
   Case_ID: string;
   FirstName: string;
@@ -70,6 +71,9 @@ interface Prisoner {
 const API_URL = "http://localhost:8088/api";
 
 export default function PrisonerManagement() {
+  const user = getUser(); // 2. ดึงข้อมูล user
+  const isStaff = user?.rankId === 2; // 3. สร้างตัวแปรเช็ค Role (สมมติ Staff คือ rankId: 2)
+
   const [form] = Form.useForm<Prisoner>();
   const [prisoners, setPrisoners] = useState<Prisoner[]>([]);
   const [filtered, setFiltered] = useState<Prisoner[]>([]);
@@ -80,9 +84,8 @@ export default function PrisonerManagement() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Prisoner | null>(null);
   const [tableLoading, setTableLoading] = useState(false);
-
-  // State สำหรับเก็บค่าเพศที่ถูกเลือกในฟอร์ม
   const [selectedGenderId, setSelectedGenderId] = useState<number | null>(null);
+  const [viewOnly, setViewOnly] = useState(false); // 4. เพิ่ม state สำหรับโหมดดูอย่างเดียว
 
   // --- Fetch Data ---
   const fetchData = async () => {
@@ -127,7 +130,8 @@ export default function PrisonerManagement() {
   // --- Modal & Form Handlers ---
   const openAdd = async () => {
     setEditing(null);
-    setSelectedGenderId(null); // Reset เพศที่เลือก
+    setViewOnly(false);
+    setSelectedGenderId(null);
     form.resetFields();
     try {
       const res = await axios.get(`${API_URL}/prisoners/next-inmate-id`);
@@ -141,7 +145,6 @@ export default function PrisonerManagement() {
 
   const openEdit = (record: Prisoner) => {
     setEditing(record);
-    // Set เพศเริ่มต้นเมื่อเปิดฟอร์มแก้ไข
     setSelectedGenderId(record.Gender_ID || record.Gender?.Gender_ID || null);
     form.setFieldsValue({
       ...record,
@@ -230,18 +233,9 @@ export default function PrisonerManagement() {
       dataIndex: "ReleaseDate",
       key: "status",
       render: (releaseDate: string | null) => {
-        // เงื่อนไขที่ 1: ไม่มีวันปล่อยตัว
-        if (!releaseDate) {
+        if (!releaseDate || dayjs(releaseDate).isAfter(dayjs())) {
           return <Tag color="red">คุมขังอยู่</Tag>;
         }
-
-        // เงื่อนไขที่ 2: มีวันปล่อยตัว แต่วันนั้นเป็นวันในอนาคต
-        // .isAfter(dayjs()) จะคืนค่า true ถ้า releaseDate อยู่หลังวันปัจจุบัน
-        if (dayjs(releaseDate).isAfter(dayjs())) {
-          return <Tag color="red">คุมขังอยู่</Tag>;
-        }
-
-        // เงื่อนไขที่ 3: มีวันปล่อยตัว และเป็นวันปัจจุบันหรืออดีต
         return <Tag color="green">ปล่อยตัวแล้ว</Tag>;
       },
     },
@@ -253,71 +247,55 @@ export default function PrisonerManagement() {
           <Button
             icon={<EditOutlined />}
             size="small"
-            onClick={() => openEdit(record)}
+            onClick={() => {
+              if (isStaff) {
+                setViewOnly(true);
+              } else {
+                setViewOnly(false);
+              }
+              openEdit(record);
+            }}
           >
-            แก้ไข
+            {isStaff ? "ดูรายละเอียด" : "แก้ไข"}
           </Button>
-          <Popconfirm
-            title="แน่ใจหรือไม่ว่าจะลบ?"
-            onConfirm={() => handleDelete(record.Prisoner_ID)}
-          >
-            <Button icon={<DeleteOutlined />} size="small" danger>
-              ลบ
-            </Button>
-          </Popconfirm>
+          {!isStaff && (
+            <Popconfirm
+              title="แน่ใจหรือไม่ว่าจะลบ?"
+              onConfirm={() => handleDelete(record.Prisoner_ID)}
+            >
+              <Button icon={<DeleteOutlined />} size="small" danger>
+                ลบ
+              </Button>
+            </Popconfirm>
+          )}
         </Space>
       ),
     },
   ];
 
-  // --- ตัวแปรสำหรับกรองห้องที่ว่างและตรงตามเพศ ---
   const availableRooms = rooms.filter((room) => {
-    // เงื่อนไข 1: ถ้าเป็นการแก้ไข ให้แสดงห้องปัจจุบันของนักโทษด้วยเสมอ
-    if (editing && room.Room_ID === editing.Room_ID) {
-      return true;
-    }
-
-    // เงื่อนไข 2: ห้องต้องมีสถานะเป็น "ว่าง"
-    if (room.Room_Status !== "ว่าง") {
+    if (editing && room.Room_ID === editing.Room_ID) return true;
+    if (room.Room_Status !== "ว่าง") return false;
+    if (selectedGenderId) {
+      const isMaleSelected = selectedGenderId === 1;
+      const isFemaleSelected = selectedGenderId === 2;
+      if (isMaleSelected && room.Room_Name.startsWith("M")) return true;
+      if (isFemaleSelected && room.Room_Name.startsWith("F")) return true;
       return false;
     }
-
-    // เงื่อนไข 3: กรองตามเพศที่เลือก
-    if (selectedGenderId) {
-      // *** สำคัญ: ปรับ ID ของเพศให้ตรงกับข้อมูลในฐานข้อมูลของคุณ ***
-      const isMaleSelected = selectedGenderId === 1; // <--- ปรับ ID ของเพศชาย
-      const isFemaleSelected = selectedGenderId === 2; // <--- ปรับ ID ของเพศหญิง
-
-      if (isMaleSelected && room.Room_Name.startsWith("M")) {
-        return true;
-      }
-      if (isFemaleSelected && room.Room_Name.startsWith("F")) {
-        return true;
-      }
-      return false; // ถ้าเลือกเพศแล้ว แต่ห้องไม่ตรงประเภท ก็ไม่ต้องแสดง
-    }
-
-    // ถ้ายังไม่เลือกเพศ ก็ไม่ต้องแสดงห้องใดๆ (ยกเว้นห้องปัจจุบันตอนแก้ไข)
     return false;
   });
 
-  // --- ฟังก์ชันสำหรับ Handle การเปลี่ยนแปลงในฟอร์ม ---
   const handleFormValuesChange = (changedValues: any) => {
-    // ถ้ามีการเปลี่ยนเพศ
     if (changedValues.Gender_ID) {
       const newGenderId = changedValues.Gender_ID;
       setSelectedGenderId(newGenderId);
-
-      // ตรวจสอบว่าห้องที่เลือกไว้ยังใช้ได้กับเพศใหม่หรือไม่
       const currentRoomId = form.getFieldValue("Room_ID");
       if (currentRoomId) {
         const currentRoom = rooms.find((r) => r.Room_ID === currentRoomId);
         if (currentRoom) {
-          // *** สำคัญ: ปรับ ID ของเพศให้ตรงกับข้อมูลในฐานข้อมูลของคุณ ***
-          const isMale = newGenderId === 1; // <--- ปรับ ID ของเพศชาย
+          const isMale = newGenderId === 1;
           const roomIsForMale = currentRoom.Room_Name.startsWith("M");
-
-          // ถ้าเพศกับห้องไม่ตรงกัน ให้ล้างค่าห้องที่เลือกไว้
           if ((isMale && !roomIsForMale) || (!isMale && roomIsForMale)) {
             form.setFieldsValue({ Room_ID: null });
           }
@@ -342,9 +320,11 @@ export default function PrisonerManagement() {
             />
           </Col>
           <Col>
-            <Button type="primary" icon={<PlusOutlined />} onClick={openAdd}>
-              เพิ่มข้อมูลนักโทษ
-            </Button>
+            {!isStaff && (
+              <Button type="primary" icon={<PlusOutlined />} onClick={openAdd}>
+                เพิ่มข้อมูลนักโทษ
+              </Button>
+            )}
           </Col>
         </Row>
       </Card>
@@ -360,7 +340,13 @@ export default function PrisonerManagement() {
       </Card>
 
       <Modal
-        title={editing ? "แก้ไขข้อมูลนักโทษ" : "เพิ่มข้อมูลนักโทษ"}
+        title={
+          editing
+            ? viewOnly
+              ? "รายละเอียดข้อมูลนักโทษ"
+              : "แก้ไขข้อมูลนักโทษ"
+            : "เพิ่มข้อมูลนักโทษ"
+        }
         open={modalOpen}
         onCancel={() => setModalOpen(false)}
         footer={null}
@@ -371,7 +357,7 @@ export default function PrisonerManagement() {
           form={form}
           layout="vertical"
           onFinish={onFinish}
-          onValuesChange={handleFormValuesChange} // เพิ่ม prop นี้เพื่อตรวจจับการเปลี่ยนแปลง
+          onValuesChange={handleFormValuesChange}
         >
           <Row gutter={16}>
             <Col xs={24} sm={12}>
@@ -385,7 +371,7 @@ export default function PrisonerManagement() {
                 name="Case_ID"
                 rules={[{ required: true, message: "กรุณากรอกหมายเลขคดี" }]}
               >
-                <Input />
+                <Input disabled={viewOnly} />
               </Form.Item>
             </Col>
             <Col xs={24} sm={12}>
@@ -394,7 +380,7 @@ export default function PrisonerManagement() {
                 name="FirstName"
                 rules={[{ required: true, message: "กรุณากรอกชื่อ" }]}
               >
-                <Input />
+                <Input disabled={viewOnly} />
               </Form.Item>
             </Col>
             <Col xs={24} sm={12}>
@@ -403,7 +389,7 @@ export default function PrisonerManagement() {
                 name="LastName"
                 rules={[{ required: true, message: "กรุณากรอกนามสกุล" }]}
               >
-                <Input />
+                <Input disabled={viewOnly} />
               </Form.Item>
             </Col>
             <Col xs={24} sm={12}>
@@ -415,7 +401,7 @@ export default function PrisonerManagement() {
                   { len: 13, message: "เลขบัตรประชาชนต้องมี 13 หลัก" },
                 ]}
               >
-                <Input maxLength={13} />
+                <Input maxLength={13} disabled={viewOnly} />
               </Form.Item>
             </Col>
             <Col xs={24} sm={12}>
@@ -424,7 +410,7 @@ export default function PrisonerManagement() {
                 name="Gender_ID"
                 rules={[{ required: true, message: "กรุณาเลือกเพศ" }]}
               >
-                <Select placeholder="เลือกเพศ">
+                <Select placeholder="เลือกเพศ" disabled={viewOnly}>
                   {genders.map((g) => (
                     <Option key={g.Gender_ID} value={g.Gender_ID}>
                       {g.Gender}
@@ -439,7 +425,11 @@ export default function PrisonerManagement() {
                 name="Birthday"
                 rules={[{ required: true, message: "กรุณาเลือกวันเกิด" }]}
               >
-                <DatePicker style={{ width: "100%" }} format="DD/MM/YYYY" />
+                <DatePicker
+                  style={{ width: "100%" }}
+                  format="DD/MM/YYYY"
+                  disabled={viewOnly}
+                />
               </Form.Item>
             </Col>
             <Col xs={24} sm={12}>
@@ -448,12 +438,20 @@ export default function PrisonerManagement() {
                 name="EntryDate"
                 rules={[{ required: true, message: "กรุณาเลือกวันที่เข้า" }]}
               >
-                <DatePicker style={{ width: "100%" }} format="DD/MM/YYYY" />
+                <DatePicker
+                  style={{ width: "100%" }}
+                  format="DD/MM/YYYY"
+                  disabled={viewOnly}
+                />
               </Form.Item>
             </Col>
             <Col xs={24} sm={12}>
               <Form.Item label="วันพ้นโทษ" name="ReleaseDate">
-                <DatePicker style={{ width: "100%" }} format="DD/MM/YYYY" />
+                <DatePicker
+                  style={{ width: "100%" }}
+                  format="DD/MM/YYYY"
+                  disabled={viewOnly}
+                />
               </Form.Item>
             </Col>
             <Col xs={24} sm={12}>
@@ -464,7 +462,7 @@ export default function PrisonerManagement() {
               >
                 <Select
                   placeholder="กรุณาเลือกเพศก่อน"
-                  disabled={!selectedGenderId}
+                  disabled={!selectedGenderId || viewOnly}
                 >
                   {availableRooms.map((r) => (
                     <Option key={r.Room_ID} value={r.Room_ID}>
@@ -482,7 +480,7 @@ export default function PrisonerManagement() {
                 name="Work_ID"
                 rules={[{ required: true, message: "กรุณาเลือกงาน" }]}
               >
-                <Select placeholder="เลือกงาน">
+                <Select placeholder="เลือกงาน" disabled={viewOnly}>
                   {works.map((w) => (
                     <Option key={w.Work_ID} value={w.Work_ID}>
                       {w.Work_Name}
@@ -495,10 +493,14 @@ export default function PrisonerManagement() {
 
           <div style={{ textAlign: "right", marginTop: 16 }}>
             <Space>
-              <Button onClick={() => setModalOpen(false)}>ยกเลิก</Button>
-              <Button type="primary" htmlType="submit">
-                {editing ? "บันทึกการแก้ไข" : "เพิ่มข้อมูล"}
+              <Button onClick={() => setModalOpen(false)}>
+                {viewOnly ? "ปิด" : "ยกเลิก"}
               </Button>
+              {!viewOnly && (
+                <Button type="primary" htmlType="submit">
+                  {editing ? "บันทึกการแก้ไข" : "เพิ่มข้อมูล"}
+                </Button>
+              )}
             </Space>
           </div>
         </Form>
