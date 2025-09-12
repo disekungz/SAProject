@@ -14,6 +14,7 @@ import {
 } from "antd";
 import axios from "axios";
 import dayjs from "dayjs";
+import { getUser } from "../lib/auth"; // 1. เพิ่มการ import
 
 const { Option } = Select;
 
@@ -51,6 +52,8 @@ interface Requesting {
 const API_URL = "http://localhost:8088/api";
 
 const RequestingManagement: React.FC = () => {
+  const user = getUser(); // 2. ดึงข้อมูล user ที่ล็อกอินอยู่
+
   // States
   const [requestings, setRequestings] = useState<Requesting[]>([]);
   const [parcels, setParcels] = useState<Parcel[]>([]);
@@ -133,7 +136,7 @@ const RequestingManagement: React.FC = () => {
       await axios.post(`${API_URL}/requestings`, createPayload);
       message.success("สร้างคำร้องสำเร็จ");
       setIsModalVisible(false);
-      await fetchData(); // ดึงใหม่ให้ได้ความสัมพันธ์ Parcel/Staff/Status ครบ
+      await fetchData();
     } catch (error) {
       console.error("Error creating requesting:", error);
       const errorMessage =
@@ -226,7 +229,7 @@ const RequestingManagement: React.FC = () => {
       title: "วันที่ร้องขอ",
       dataIndex: "Request_Date",
       key: "Request_Date",
-      render: (date: string) => (date ? dayjs(date).format("YYYY-MM-DD") : "-"),
+      render: (date: string) => (date ? dayjs(date).format("DD/MM/YYYY") : "-"),
     },
     {
       title: "สถานะคำขอ",
@@ -240,7 +243,6 @@ const RequestingManagement: React.FC = () => {
         return (
           <Tag color={color}>
             {String(
-              // ย้ายนิพจน์ทั้งหมดมาไว้ตรงนี้
               record.Status?.Status ||
                 statuses.find((s) => s.Status_ID === record.Status_ID)
                   ?.Status ||
@@ -301,13 +303,15 @@ const RequestingManagement: React.FC = () => {
         open={isModalVisible}
         onCancel={handleCancel}
         destroyOnClose
+        // 3. แก้ไขเงื่อนไขการแสดงผลปุ่ม
         footer={
           editingRequesting
             ? [
                 <Button key="back" onClick={handleCancel}>
                   ออก
                 </Button>,
-                ...(editingRequesting.Status_ID === 1
+                // เช็คว่า status เป็น "รออนุมัติ" (ID=1) และ user มี rankId เป็น 1 (ผู้มีสิทธิ์อนุมัติ)
+                ...(editingRequesting.Status_ID === 1 && user?.rankId === 1
                   ? [
                       <Button
                         key="reject"
@@ -396,6 +400,7 @@ const RequestingManagement: React.FC = () => {
             <DatePicker
               style={{ width: "100%" }}
               disabled={!!editingRequesting}
+              format="DD/MM/YYYY"
             />
           </Form.Item>
 
