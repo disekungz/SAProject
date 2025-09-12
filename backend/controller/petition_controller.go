@@ -22,13 +22,14 @@ type PetitionInput struct {
 
 // isStaff checks if the logged-in user is a staff member (not a relative, RankID 3)
 // file: petition_controller.go
+// isStaff checks if the logged-in user is a staff member
 func isStaff(c *gin.Context) bool {
 	rankId, exists := c.Get("rankId")
 	if !exists {
 		return false
 	}
-	// แก้ไขให้รับค่าเป็น uint ให้ตรงกับที่ middleware ตั้งไว้
-	if id, ok := rankId.(uint); ok { // ✅ แก้ไขเป็น uint
+	// ✅ แก้ไขเป็น int ให้ตรงกับที่ Middleware ส่งมา
+	if id, ok := rankId.(int); ok {
 		// อนุญาตทุก Rank ID ที่ไม่ใช่ 3 (ญาติ)
 		return id != 3
 	}
