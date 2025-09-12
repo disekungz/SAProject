@@ -67,7 +67,7 @@ export default function Sidebar() {
     { to: "/prisonermanagement", icon: <UserPen size={18} />, label: "จัดการข้อมูลผู้ต้องขัง", allowed: [1, 2] },
     { to: "/room_management", icon: <DoorClosed size={18} />, label: "จัดการห้องขัง", allowed: [1, 2] },
     { to: "/requestingmanagement", icon: <ClipboardList size={18} />, label: "เบิกของ / ขอใช้สิ่งของ", allowed: [1, 2] },
-    { to: "/staffmanagement", icon: <Users size={18} />, label: "จัดการเจ้าหน้าที่", allowed: [1, 2] },
+    { to: "/staffmanagement", icon: <Users size={18} />, label: "จัดการเจ้าหน้าที่", allowed: [1] },
     { to: "/medicalexamination", icon: <Heart size={18} />, label: "ตรวจรักษา / โรค", allowed: [1, 2] },
     { to: "/inventory", icon: <Box size={18} />, label: "คลังพัสดุและการจัดซื้อ", allowed: [1, 2] },
     { to: "/score-behavior", icon: <Smile size={18} />, label: "คะแนนความประพฤติ", allowed: [1, 2] },
