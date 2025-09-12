@@ -10,7 +10,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// Payload ที่จะรับจาก Frontend
+// VisitationInput defines the payload structure from the frontend
 type VisitationInput struct {
 	Visit_Date       string `json:"Visit_Date"`
 	TimeSlot_ID      uint   `json:"TimeSlot_ID"`
@@ -23,11 +23,8 @@ type VisitationInput struct {
 	VisitorCitizenID string `json:"VisitorCitizenID"`
 }
 
-// -------------------- GET --------------------
+// -------------------- GET /visitations --------------------
 func GetVisitations(c *gin.Context) {
-	rankId, _ := c.Get("rankId")
-	citizenId, _ := c.Get("citizenId")
-
 	var items []entity.Visitation
 	query := configs.DB().
 		Preload("Inmate").
@@ -38,16 +35,29 @@ func GetVisitations(c *gin.Context) {
 		Preload("TimeSlot").
 		Order("visit_date desc")
 
-	// ถ้าเป็นญาติ (Rank ID = 3) ให้กรองข้อมูล
-	if rankId == uint(3) {
-		var visitor entity.Visitor
-		// ค้นหา visitor จาก citizenId ของคนที่ login
-		configs.DB().Where("citizen_id = ?", citizenId).First(&visitor)
+	rankId, _ := c.Get("rankId")
 
+	// ✅ FIX: Check rankId as INT to match middleware
+	if id, ok := rankId.(int); ok && id == 3 {
+		citizenId, exists := c.Get("citizenId")
+		if !exists {
+			c.JSON(http.StatusForbidden, gin.H{"error": "Citizen ID not found in token for visitor"})
+			return
+		}
+		userCitizenID := citizenId.(string)
+
+		var visitor entity.Visitor
+		// Find the visitor's ID from their citizen ID
+		if err := configs.DB().Where("citizen_id = ?", userCitizenID).First(&visitor).Error; err != nil {
+			// If no visitor record found, return an empty list
+			c.JSON(http.StatusOK, []entity.Visitation{})
+			return
+		}
+
+		// Filter visitations by the found visitor's ID
 		if visitor.ID > 0 {
 			query = query.Where("visitor_id = ?", visitor.ID)
 		} else {
-			// ถ้าไม่เจอ visitor ที่ตรงกัน ก็ไม่ต้องแสดงข้อมูล
 			c.JSON(http.StatusOK, []entity.Visitation{})
 			return
 		}
@@ -61,7 +71,7 @@ func GetVisitations(c *gin.Context) {
 	c.JSON(http.StatusOK, items)
 }
 
-// -------------------- POST --------------------
+// -------------------- POST /visitations --------------------
 func CreateVisitation(c *gin.Context) {
 	var input VisitationInput
 	if err := c.ShouldBindJSON(&input); err != nil {
@@ -77,6 +87,7 @@ func CreateVisitation(c *gin.Context) {
 
 	tx := configs.DB().Begin()
 
+	// Find existing visitor or create a new one
 	var visitor entity.Visitor
 	visitorData := entity.Visitor{
 		FirstName:  input.VisitorFirstName,
@@ -90,6 +101,7 @@ func CreateVisitation(c *gin.Context) {
 		return
 	}
 
+	// Check for booking conflicts
 	var existingVisit entity.Visitation
 	err = tx.Where("visit_date = ? AND time_slot_id = ?", visitDate, input.TimeSlot_ID).First(&existingVisit).Error
 	if err == nil {
@@ -103,6 +115,7 @@ func CreateVisitation(c *gin.Context) {
 		return
 	}
 
+	// Create the new visitation record
 	item := entity.Visitation{
 		Visit_Date:      visitDate,
 		TimeSlot_ID:     &input.TimeSlot_ID,
@@ -122,7 +135,7 @@ func CreateVisitation(c *gin.Context) {
 	c.JSON(http.StatusCreated, item)
 }
 
-// -------------------- PUT --------------------
+// -------------------- PUT /visitations/:id --------------------
 func UpdateVisitation(c *gin.Context) {
 	id := c.Param("id")
 	var item entity.Visitation
@@ -132,10 +145,10 @@ func UpdateVisitation(c *gin.Context) {
 	}
 
 	rankId, _ := c.Get("rankId")
-	citizenId, _ := c.Get("citizenId")
 
-	// --- ตรวจสอบสิทธิ์ ---
-	if rankId == uint(3) {
+	// ✅ FIX: Check authorization using INT for rankId
+	if id, ok := rankId.(int); ok && id == 3 {
+		citizenId, _ := c.Get("citizenId")
 		var visitor entity.Visitor
 		configs.DB().Where("citizen_id = ?", citizenId).First(&visitor)
 		if item.Visitor_ID != nil && *item.Visitor_ID != visitor.ID {
@@ -158,6 +171,7 @@ func UpdateVisitation(c *gin.Context) {
 
 	tx := configs.DB().Begin()
 
+	// Handle visitor data
 	var visitor entity.Visitor
 	visitorData := entity.Visitor{
 		FirstName:  input.VisitorFirstName,
@@ -171,6 +185,7 @@ func UpdateVisitation(c *gin.Context) {
 		return
 	}
 
+	// Check for booking conflicts, excluding the current record
 	var existingVisit entity.Visitation
 	err = tx.Where("id <> ? AND visit_date = ? AND time_slot_id = ?", id, visitDate, input.TimeSlot_ID).First(&existingVisit).Error
 	if err == nil {
@@ -184,6 +199,7 @@ func UpdateVisitation(c *gin.Context) {
 		return
 	}
 
+	// Update fields
 	item.Visit_Date = visitDate
 	item.TimeSlot_ID = &input.TimeSlot_ID
 	item.Inmate_ID = &input.Inmate_ID
@@ -202,7 +218,7 @@ func UpdateVisitation(c *gin.Context) {
 	c.JSON(http.StatusOK, item)
 }
 
-// -------------------- DELETE --------------------
+// -------------------- DELETE /visitations/:id --------------------
 func DeleteVisitation(c *gin.Context) {
 	id := c.Param("id")
 	var item entity.Visitation
@@ -212,10 +228,10 @@ func DeleteVisitation(c *gin.Context) {
 	}
 
 	rankId, _ := c.Get("rankId")
-	citizenId, _ := c.Get("citizenId")
 
-	// --- ตรวจสอบสิทธิ์ ---
-	if rankId == uint(3) {
+	// ✅ FIX: Check authorization using INT for rankId
+	if id, ok := rankId.(int); ok && id == 3 {
+		citizenId, _ := c.Get("citizenId")
 		var visitor entity.Visitor
 		configs.DB().Where("citizen_id = ?", citizenId).First(&visitor)
 		if item.Visitor_ID != nil && *item.Visitor_ID != visitor.ID {
@@ -228,6 +244,6 @@ func DeleteVisitation(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete visitation"})
 		return
 	}
+
 	c.JSON(http.StatusOK, gin.H{"message": "Visitation deleted successfully"})
 }
-
