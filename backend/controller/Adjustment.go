@@ -1,6 +1,8 @@
+// controller/adjustment.go (หรือไฟล์ที่มี CreateAdjustment)
 package controller
 
 import (
+	"fmt"
 	"net/http"
 	"time"
 
@@ -10,36 +12,48 @@ import (
 	"gorm.io/gorm"
 )
 
-// helper: ดึง mid จาก context (มาจาก middleware.AuthOptional)
-func midFromContext(c *gin.Context) *uint {
+// แก้ให้คืน *int แทน *uint และรองรับชนิดที่ middleware อาจยัดเข้ามา
+func midFromContext(c *gin.Context) *int {
 	if v, ok := c.Get("mid"); ok {
-		if vv, ok2 := v.(uint); ok2 {
-			return &vv
-		}
-		// บางเคส jwt lib คืน float64
-		if f, ok2 := v.(float64); ok2 {
-			u := uint(f)
-			return &u
+		switch x := v.(type) {
+		case int:
+			return &x
+		case int32:
+			i := int(x)
+			return &i
+		case int64:
+			i := int(x)
+			return &i
+		case uint:
+			i := int(x)
+			return &i
+		case uint32:
+			i := int(x)
+			return &i
+		case uint64:
+			i := int(x)
+			return &i
+		case float64:
+			i := int(x)
+			return &i
 		}
 	}
 	return nil
 }
 
-// --- Adjustment (log การแก้ไขคะแนน) ---
 func CreateAdjustment(c *gin.Context) {
 	var input struct {
 		Prisoner_ID uint   `json:"prisoner_id"`
-		Inmate_ID   string `json:"inmate_id"` // optional: เพื่อความสะดวก frontend
-		OldScore    int    `json:"oldScore"`  // จะไม่ใช้ค่านี้ (คำนวณจากฐานข้อมูลแทน)
+		Inmate_ID   string `json:"inmate_id"` // optional
+		OldScore    int    `json:"oldScore"`  // ignored
 		NewScore    int    `json:"newScore"`
-		MID         *uint  `json:"mid"` // optional: ถ้าไม่ส่ง จะ fallback จาก context
+		MID         *int   `json:"mid"` // เปลี่ยนเป็น *int ให้ตรง entity
 		Remarks     string `json:"remarks"`
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-
 	if input.Prisoner_ID == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid prisoner id"})
 		return
@@ -47,29 +61,28 @@ func CreateAdjustment(c *gin.Context) {
 
 	db := configs.DB()
 
-	// ตรวจว่ามี prisoner จริงไหม
+	// verify prisoner
 	var prisoner entity.Prisoner
 	if err := db.First(&prisoner, input.Prisoner_ID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "prisoner not found"})
 		return
 	}
 
-	// เลือก mid: ถ้า client ไม่ส่งมา → อ่านจาก context
+	// mid: payload > context
 	mid := input.MID
 	if mid == nil {
 		mid = midFromContext(c)
 	}
+	// debug ช่วยไล่ปัญหา
+	fmt.Printf("DEBUG CreateAdjustment mid payload=%v ctx=%v\n", input.MID, midFromContext(c))
 
-	// ทำงานแบบ atomic
 	err := db.Transaction(func(tx *gorm.DB) error {
-		// หา/สร้าง score behavior
 		var sb entity.ScoreBehavior
 		res := tx.Where("prisoner_id = ?", input.Prisoner_ID).First(&sb)
 
 		var oldScore int
 		if res.Error != nil {
 			if res.Error == gorm.ErrRecordNotFound {
-				// ยังไม่มี → old=0 แล้วสร้างใหม่ด้วยคะแนนใหม่
 				oldScore = 0
 				sb = entity.ScoreBehavior{
 					Prisoner_ID: input.Prisoner_ID,
@@ -82,7 +95,6 @@ func CreateAdjustment(c *gin.Context) {
 				return res.Error
 			}
 		} else {
-			// มีแล้ว → จด oldScore และอัปเดตเป็น NewScore
 			oldScore = sb.Score
 			sb.Score = input.NewScore
 			if err := tx.Save(&sb).Error; err != nil {
@@ -90,7 +102,6 @@ func CreateAdjustment(c *gin.Context) {
 			}
 		}
 
-		// บันทึก adjustment (remarks อนุญาตให้ว่าง)
 		var remarksPtr *string
 		if input.Remarks != "" {
 			r := input.Remarks
@@ -98,29 +109,25 @@ func CreateAdjustment(c *gin.Context) {
 		}
 
 		adj := entity.Adjustment{
-			OldScore:    oldScore, // ใช้ค่าจากฐานข้อมูล
+			OldScore:    oldScore,
 			NewScore:    input.NewScore,
 			Prisoner_ID: input.Prisoner_ID,
 			SID:         &sb.SID,
-			MID:         mid, // อาจเป็น nil ได้ ถ้าไม่มีทั้ง payload และ context
+			MID:         mid, // << ตรง type/column แล้ว
 			Date:        time.Now(),
 			Remarks:     remarksPtr,
 		}
 		if err := tx.Create(&adj).Error; err != nil {
 			return err
 		}
-
-		// ส่งผลลัพธ์กลับผ่าน context (ใช้หลัง Transaction)
 		c.Set("adj_result", adj)
 		return nil
 	})
-
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create adjustment: " + err.Error()})
 		return
 	}
 
-	// อ่านผลที่ set ไว้ตอน transaction
 	if v, ok := c.Get("adj_result"); ok {
 		if adj, ok2 := v.(entity.Adjustment); ok2 {
 			c.JSON(http.StatusCreated, adj)
@@ -132,7 +139,7 @@ func CreateAdjustment(c *gin.Context) {
 
 func GetAdjustments(c *gin.Context) {
 	type AdjRow struct {
-		AID         uint      `json:"AID"`
+		AID         int       `json:"AID"`
 		OldScore    int       `json:"OldScore"`
 		NewScore    int       `json:"NewScore"`
 		Date        time.Time `json:"Date"`
