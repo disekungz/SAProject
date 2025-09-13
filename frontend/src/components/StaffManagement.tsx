@@ -52,7 +52,7 @@ const LAYOUT = {
 /* =========================
  * Utils
  * =======================*/
-const generateRandomStaffID = () => Math.floor(100 + Math.random() * 900);
+const generateRandomStaffID = () => Math.floor(1 + Math.random() * 900);
 const generateUnique3DigitID = (existing: number[]) => {
   const used = new Set(existing);
   for (let i = 0; i < 200; i++) {
