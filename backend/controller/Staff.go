@@ -79,10 +79,9 @@ func CreateStaff(c *gin.Context) {
 		return
 	}
 
-	// ✅ ถ้ามี StaffID ที่ส่งมาจาก frontend ให้ตรวจว่าเป็นเลข 3 หลัก และไม่ซ้ำ
 	if input.StaffID != nil {
 		if *input.StaffID < 100 || *input.StaffID > 999 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "StaffID ต้องเป็นเลข 3 หลักระหว่าง 100-999"})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "StaffID ต้องเป็นเลขไม่เกิน 3 หลักระหว่าง 1-999"})
 			return
 		}
 		var cnt int64
