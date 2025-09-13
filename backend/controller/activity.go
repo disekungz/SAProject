@@ -284,27 +284,31 @@ func UpdateActivitySchedule(c *gin.Context) {
 func DeleteActivitySchedule(c *gin.Context) {
 	db := configs.DB()
 	id := c.Param("id")
+
 	err := db.Transaction(func(tx *gorm.DB) error {
+		// ตรวจสอบก่อนว่า schedule ที่จะลบมีอยู่จริงหรือไม่
 		var scheduleToDelete entity.ActivitySchedule
 		if err := tx.First(&scheduleToDelete, id).Error; err != nil {
+			if err == gorm.ErrRecordNotFound {
+				return fmt.Errorf("ไม่พบ schedule ที่มี ID: %s", id)
+			}
 			return err
 		}
-		activityID := scheduleToDelete.Activity_ID
+
+		// ลบ enrollment ที่เกี่ยวข้องทั้งหมดก่อน
 		if err := tx.Where("schedule_id = ?", id).Delete(&entity.Enrollment{}).Error; err != nil {
 			return err
 		}
+
+		// จากนั้นจึงลบ schedule
 		if err := tx.Delete(&entity.ActivitySchedule{}, id).Error; err != nil {
 			return err
 		}
-		var remainingSchedules int64
-		if err := tx.Model(&entity.ActivitySchedule{}).Where("activity_id = ?", activityID).Count(&remainingSchedules).Error; err != nil {
-			return err
-		}
-		if remainingSchedules == 0 {
-			if err := tx.Delete(&entity.Activity{}, activityID).Error; err != nil {
-				return err
-			}
-		}
+
+		// --- ส่วนที่ถูกลบออก ---
+		// โค้ดที่ตรวจสอบและลบ Activity หลักได้ถูกนำออกไปแล้ว
+		// ทำให้ Activity จะไม่ถูกลบไปด้วย
+
 		return nil
 	})
 
@@ -312,6 +316,7 @@ func DeleteActivitySchedule(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+
 	c.JSON(http.StatusOK, gin.H{"message": "Schedule and related data deleted successfully"})
 }
 
@@ -323,51 +328,76 @@ type enrollmentInput struct {
 
 // POST /enrollments
 func EnrollParticipant(c *gin.Context) {
-	db := configs.DB()
+  db := configs.DB()
 
-	var input enrollmentInput
-	if err := c.ShouldBindJSON(&input); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
+  var input enrollmentInput
+  if err := c.ShouldBindJSON(&input); err != nil {
+    c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+    return
+  }
 
-	err := db.Transaction(func(tx *gorm.DB) error {
-		var s entity.ActivitySchedule
-		if err := tx.First(&s, input.ScheduleID).Error; err != nil {
-			return err
-		}
-		var p entity.Prisoner
-		if err := tx.First(&p, input.PrisonerID).Error; err != nil {
-			return err
-		}
-		var count int64
-		if err := tx.Model(&entity.Enrollment{}).
-			Where("schedule_id = ? AND prisoner_id = ?", input.ScheduleID, input.PrisonerID).
-			Count(&count).Error; err != nil {
-			return err
-		}
-		if count > 0 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "ผู้ต้องขังถูกลงทะเบียนในรอบนี้แล้ว"})
-			return nil
-		}
+  err := db.Transaction(func(tx *gorm.DB) error {
+    var s entity.ActivitySchedule
+    if err := tx.First(&s, input.ScheduleID).Error; err != nil {
+      return err // ไม่พบ Schedule
+    }
+    var p entity.Prisoner
+    if err := tx.First(&p, input.PrisonerID).Error; err != nil {
+      return err // ไม่พบ Prisoner
+    }
 
-		enrollment := entity.Enrollment{
-			EnrollDate:  time.Now(),
-			Status:      1,
-			Schedule_ID: input.ScheduleID,
-			Prisoner_ID: input.PrisonerID,
-		}
-		if err := tx.Create(&enrollment).Error; err != nil {
-			return err
-		}
+    // ---  ---
+    var currentEnrollmentCount int64
+    // นับจำนวนผู้ที่ลงทะเบียนใน schedule นี้ และมี status = 1 (เข้าร่วม)
+    if err := tx.Model(&entity.Enrollment{}).
+      Where("schedule_id = ? AND status = ?", input.ScheduleID, 1).
+      Count(&currentEnrollmentCount).Error; err != nil {
+      return err // คืนค่า error ถ้า query ผิดพลาด
+    }
 
-		c.JSON(http.StatusCreated, enrollment)
-		return nil
-	})
+    // ตรวจสอบว่าจำนวนคนปัจจุบัน >= จำนวนสูงสุดที่รับได้หรือไม่
+    if currentEnrollmentCount >= int64(s.Max) {
+      // ส่ง JSON error กลับไปให้ frontend โดยเฉพาะ
+      c.JSON(http.StatusConflict, gin.H{"error": "ไม่สามารถลงทะเบียนได้ เนื่องจากจำนวนผู้เข้าร่วมเต็มแล้ว"})
+      // คืนค่า error เพื่อให้ transaction ทำการ rollback
+      return fmt.Errorf("activity is full")
+    }
+    // ---  ---
 
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-	}
+    // เช็คว่าเคยลงทะเบียนแล้วหรือยัง (โค้ดเดิม)
+    var count int64
+    if err := tx.Model(&entity.Enrollment{}).
+      Where("schedule_id = ? AND prisoner_id = ?", input.ScheduleID, input.PrisonerID).
+      Count(&count).Error; err != nil {
+      return err
+    }
+    if count > 0 {
+      c.JSON(http.StatusBadRequest, gin.H{"error": "ผู้ต้องขังถูกลงทะเบียนในรอบนี้แล้ว"})
+      return nil // คืนค่า nil แต่ c.JSON ถูกเรียกไปแล้ว
+    }
+
+    // สร้าง enrollment (โค้ดเดิม)
+    enrollment := entity.Enrollment{
+      EnrollDate:  time.Now(),
+      Status:      1,
+      Schedule_ID: input.ScheduleID,
+      Prisoner_ID: input.PrisonerID,
+    }
+    if err := tx.Create(&enrollment).Error; err != nil {
+      return err
+    }
+
+    c.JSON(http.StatusCreated, enrollment)
+    return nil
+  })
+
+  if err != nil {
+    // ตรวจสอบว่า error message ไม่ใช่ "activity is full"
+    // เพื่อไม่ให้ส่ง JSON error ซ้ำซ้อน
+    if err.Error() != "activity is full" {
+        c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+    }
+  }
 }
 
 type statusUpdateInput struct {
