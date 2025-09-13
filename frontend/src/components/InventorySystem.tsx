@@ -40,6 +40,7 @@ const InventorySystem: React.FC = () => {
   const [showApprovedPanel, setShowApprovedPanel] = useState(false);
   const [approvedRequests, setApprovedRequests] = useState<any[]>([]);
   const [loadingRequests, setLoadingRequests] = useState(false);
+  const [processing, setProcessing] = useState<Record<number, boolean>>({}); // ✅ กันกดซ้ำ
 
   // ✅ ผู้ใช้ปัจจุบัน (ใช้เช็คสิทธิ์แอดมิน)
   const user = useMemo(() => getUser(), []);
@@ -51,15 +52,13 @@ const InventorySystem: React.FC = () => {
     2: 'เบิก',
     3: 'แก้ไข',
     4: 'เพิ่มใหม่',
-    5: 'ลบทิ้ง', // ✅ สำคัญ
+    5: 'ลบทิ้ง', // ✅ เพิ่ม mapping ลบ
   };
 
   // ฟังก์ชันคืน label สถานะ + ฟอลแบ็กเดาเป็น "ลบทิ้ง" ถ้าเงื่อนไขเข้าเคสลบ
   const operatorLabel = (log: any) => {
     const label = operatorMap[Number(log?.OperatorID)];
     if (label) return label;
-
-    // เผื่อหลังบ้านยังไม่บันทึก OperatorID=5:
     if ((log?.NewQuantity ?? 0) === 0 && (log?.OldQuantity ?? 0) > 0 && (log?.ChangeAmount ?? 0) < 0) {
       return 'ลบทิ้ง';
     }
@@ -187,7 +186,7 @@ const InventorySystem: React.FC = () => {
     const sid = Number(r?.StaffID ?? r?.Staff_ID ?? r?.staff_id);
     const s = staffMapById[sid];
     const f2 = s?.FirstName ?? s?.firstName ?? s?.first_name ?? s?.Name ?? s?.name;
-    const l2 = s?.LastName ?? s?.last_name ?? s?.last_name;
+    const l2 = s?.LastName ?? s?.lastName ?? s?.last_name;
     return [f2, l2].filter(Boolean).join(' ') || '-';
   };
 
@@ -195,6 +194,34 @@ const InventorySystem: React.FC = () => {
     const raw = r.Request_Date ?? r.request_date ?? r.requestDate ?? r.date;
     const t = new Date(raw).getTime();
     return Number.isFinite(t) ? t : 0;
+  };
+
+  // ✅ helper: ดึง PID ของพัสดุจาก request (พยายามอ่านได้หลายคีย์)
+  const resolveRequestPID = (r: any) => {
+    const pid =
+      r?.PID ?? r?.pid ??
+      r?.Parcel_ID ?? r?.parcel_id ??
+      r?.Parcel?.PID ?? r?.parcel?.PID;
+    if (pid) return Number(pid);
+
+    // เผื่อไม่มี PID แต่มีชื่อ → map กลับหา PID
+    const name = getParcelName(r);
+    if (name && typeof name === 'string') {
+      const found = parcels.find(p => (p.ParcelName ?? '').trim() === name.trim());
+      if (found) return Number(found.PID);
+    }
+    return NaN;
+  };
+
+  // ✅ helper: ดึงจำนวนที่ขอ
+  const resolveRequestAmount = (r: any) => {
+    const raw =
+      r?.Amount_Request ?? r?.amount_request ??
+      r?.Amount ?? r?.amount ??
+      r?.Qty ?? r?.qty ??
+      r?.Quantity ?? r?.quantity;
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : NaN;
   };
 
   // ====== Approved Requestings ======
@@ -223,25 +250,50 @@ const InventorySystem: React.FC = () => {
     if (next) fetchApprovedRequests();
   };
 
+  // ✅ เปลี่ยนเป็น: ลดสต็อก -> อัปเดตสถานะคำขอ -> refresh
   const markRequestCompleted = async (req: any) => {
-    try {
-      await api.put(`/requestings/${req.Requesting_ID}/status`, { Status_ID: 4 });
-      setApprovedRequests(prev => prev.filter(r => r.Requesting_ID !== req.Requesting_ID));
-      showSnackbar('อัปเดตสถานะคำขอเบิกเป็น "สำเร็จ" แล้ว', 'success');
+    const id = Number(req?.Requesting_ID ?? req?.id);
+    setProcessing(prev => ({ ...prev, [id]: true }));
 
+    try {
+      const pid = resolveRequestPID(req);
+      const amount = resolveRequestAmount(req);
+
+      if (!Number.isFinite(pid) || pid <= 0) {
+        showSnackbar('ไม่พบพัสดุของคำขอนี้ (PID ว่าง)', 'error');
+        return;
+      }
+      if (!Number.isFinite(amount) || amount <= 0) {
+        showSnackbar('จำนวนที่ขอไม่ถูกต้อง', 'error');
+        return;
+      }
+
+      // 1) ลดสต็อก (ฝั่งหลังบ้านจะบันทึก Operation: เบิก ให้เลย)
+      await api.post(`/parcels/${pid}/reduce`, { amount });
+
+      // 2) อัปเดตสถานะคำขอเป็น "สำเร็จ" (4)
+      await api.put(`/requestings/${req.Requesting_ID}/status`, { Status_ID: 4 });
+
+      // 3) อัปเดตหน้าจอ
+      setApprovedRequests(prev => prev.filter(r => (r.Requesting_ID ?? r.id) !== (req.Requesting_ID ?? req.id)));
+      showSnackbar('บันทึกการเบิกและอัปเดตคำขอเป็น "สำเร็จ" แล้ว', 'success');
+
+      // refresh คลัง + ประวัติ
       try {
-        const [pRes, oRes] = await Promise.all([
-          api.get(`/parcels`),
-          api.get(`/operations`),
-        ]);
+        const [pRes, oRes] = await Promise.all([api.get(`/parcels`), api.get(`/operations`)]);
         setParcels(pRes.data);
         setOperationLogs(oRes.data);
       } catch { /* เงียบๆ */ }
     } catch (e: any) {
       console.error(e);
-      const msg = e?.response?.data?.error || 'อัปเดตสถานะคำขอเบิกไม่สำเร็จ';
-      setError(msg);
+      const msg = e?.response?.data?.error || 'ทำรายการไม่สำเร็จ';
       showSnackbar(msg, 'error');
+    } finally {
+      setProcessing(prev => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
     }
   };
 
@@ -281,7 +333,7 @@ const InventorySystem: React.FC = () => {
         // ✅ กันชื่อซ้ำ (ยกเว้นตัวเอง)
         const dup = parcels.some(
           p => p.PID !== currentParcel.PID &&
-               nameNormalized(p.ParcelName ?? '') === nameNormalized(name)
+            nameNormalized(p.ParcelName ?? '') === nameNormalized(name)
         );
         if (dup) {
           showSnackbar('ชื่อพัสดุนี้มีอยู่แล้ว', 'warning');
@@ -573,8 +625,12 @@ const InventorySystem: React.FC = () => {
                     <TableRow key={r.Requesting_ID} hover>
                       <TableCell>{r.Requesting_NO}</TableCell>
                       <TableCell>{getParcelName(r)}</TableCell>
-                      <TableCell align="right">{r.Amount_Request}</TableCell>
-                      <TableCell>{new Date(r.Request_Date ?? r.request_date ?? r.date).toLocaleString('th-TH')}</TableCell>
+                      <TableCell align="right">{resolveRequestAmount(r) || r.Amount_Request}</TableCell>
+                      <TableCell>
+                        {new Date(r.Request_Date ?? r.request_date ?? r.date)
+                          .toLocaleDateString('th-TH', { year: 'numeric', month: '2-digit', day: '2-digit' })}
+                      </TableCell>
+
                       <TableCell>{getStaffName(r)}</TableCell>
                       <TableCell>{getStatusText(r)}</TableCell>
                       <TableCell align="center">
@@ -582,8 +638,9 @@ const InventorySystem: React.FC = () => {
                           variant="contained"
                           color="success"
                           onClick={() => markRequestCompleted(r)}
+                          disabled={!!processing[r.Requesting_ID]}
                         >
-                          สำเร็จ
+                          {processing[r.Requesting_ID] ? 'กำลังบันทึก...' : 'สำเร็จ'}
                         </Button>
                       </TableCell>
                     </TableRow>
