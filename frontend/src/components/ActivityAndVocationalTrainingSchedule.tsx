@@ -312,26 +312,40 @@ const ActivityAndVocationalTrainingSchedule: FC = () => {
   const openParticipantModal = (record: ActivityRecord) => { setCurrentSchedule(record); setParticipantModalOpen(true); };
   
   const handleAddParticipant = async (values: { prisonerId: number }) => {
-    if (!currentSchedule) return;
-    if ((currentSchedule.enrollment || []).some((e) => e.prisoner?.Prisoner_ID === values.prisonerId)) {
-      toast.warning("ผู้ต้องขังคนนี้อยู่ในรายการแล้ว");
-      return;
-    }
-    try {
-      setLoading(true);
-      await axios.post(`${BASE}/enrollments`, {
-        scheduleId: currentSchedule.schedule_ID,
-        prisonerId: values.prisonerId,
-      });
-      toast.success("เพิ่มผู้เข้าร่วมเรียบร้อย");
-      participantForm.resetFields();
-      await refreshSchedulesAndUpdateCurrent(currentSchedule.schedule_ID);
-    } catch (err: any) {
-      toast.error(err?.response?.data?.error || "ไม่สามารถเพิ่มผู้เข้าร่วมได้");
-    } finally {
-      setLoading(false);
-    }
-  };
+  if (!currentSchedule) return;
+
+  // เช็คว่าลงทะเบียนซ้ำซ้อนหรือไม่
+  if ((currentSchedule.enrollment || []).some((e) => e.prisoner?.Prisoner_ID === values.prisonerId)) {
+    toast.warning("ผู้ต้องขังคนนี้อยู่ในรายการแล้ว");
+    return;
+  }
+
+  // ---  ---
+  // นับจำนวนผู้เข้าร่วมปัจจุบัน (เฉพาะคนที่มีสถานะ "เข้าร่วม")
+  const currentParticipants = (currentSchedule.enrollment || []).filter(e => e.status === 1).length;
+
+  // ตรวจสอบว่าจำนวนปัจจุบันถึงขีดจำกัดสูงสุดหรือยัง
+  if (currentParticipants >= currentSchedule.max) {
+    toast.error("ไม่สามารถเพิ่มได้", "จำนวนผู้เข้าร่วมกิจกรรมนี้เต็มแล้ว");
+    return; // หยุดการทำงาน
+  }
+  // ---  ---
+
+  try {
+    setLoading(true);
+    await axios.post(`${BASE}/enrollments`, {
+      scheduleId: currentSchedule.schedule_ID,
+      prisonerId: values.prisonerId,
+    });
+    toast.success("เพิ่มผู้เข้าร่วมเรียบร้อย");
+    participantForm.resetFields();
+    await refreshSchedulesAndUpdateCurrent(currentSchedule.schedule_ID);
+  } catch (err: any) {
+    toast.error(err?.response?.data?.error || "ไม่สามารถเพิ่มผู้เข้าร่วมได้");
+  } finally {
+    setLoading(false);
+  }
+};
 
   const openWithdrawal = (enrollment: EnrollmentRecord) => {
     setCurrentEnrollment(enrollment);
