@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState, useEffect, useMemo } from "react";
 import {
   Input, Button, Card, Form, DatePicker, Row, Col, Typography,
@@ -12,6 +13,7 @@ import {
 import axios from "axios";
 import dayjs, { Dayjs } from "dayjs";
 import type { ColumnsType } from "antd/es/table";
+import { getUser } from "../lib/auth"; // ดึงข้อมูลผู้ใช้
 
 const { Title, Text } = Typography;
 
@@ -162,7 +164,13 @@ export default function StaffManagement() {
       notify.error({ message: msg, description: desc, placement: "bottomRight" }),
     info: (msg: string, desc?: string) =>
       notify.info({ message: msg, description: desc, placement: "bottomRight" }),
+    warning: (msg: string, desc?: string) =>
+      notify.warning({ message: msg, description: desc, placement: "bottomRight" }),
   };
+
+  //ตรวจบทบาท
+  const user = getUser();
+  const isGuard = user?.rankId === 2; // ผู้คุม
 
   // data
   const [staffs, setStaffs] = useState<Staff[]>([]);
@@ -261,6 +269,11 @@ export default function StaffManagement() {
   };
 
   const openAdd = () => {
+    // กันผู้คุม
+    if (isGuard) {
+      toast.warning("สิทธิ์ไม่พอ", "ผู้คุมไม่สามารถเพิ่มเจ้าหน้าที่ได้");
+      return;
+    }
     form.resetFields();
     setSelected(null);
     setIsEditing(true);
@@ -269,7 +282,7 @@ export default function StaffManagement() {
 
   const openView = (record: Staff) => {
     setSelected(record);
-    setIsEditing(false);
+    setIsEditing(false); // เปิดแบบดูอย่างเดียวก่อน
     form.setFieldsValue({
       ...record,
       Gender_ID: Number(record.Gender_ID),
@@ -287,6 +300,11 @@ export default function StaffManagement() {
   };
 
   const handleDelete = async (id: number) => {
+    // กันผู้คุม
+    if (isGuard) {
+      toast.warning("สิทธิ์ไม่พอ", "ผู้คุมไม่สามารถลบข้อมูลเจ้าหน้าที่ได้");
+      return;
+    }
     try {
       await axios.delete(`${API_BASE}/staffs/${id}`);
       toast.success("ลบข้อมูลสำเร็จ");
@@ -296,6 +314,7 @@ export default function StaffManagement() {
     }
   };
 
+  // อนุญาตผู้คุมเปลี่ยนสถานะได้ (ไม่แตะข้อมูลอื่น)
   const changeStatusInline = async (record: Staff, next: WorkStatus) => {
     if (record.Status === next) return;
     setStaffs((prev) => prev.map((s) => (s.StaffID === record.StaffID ? { ...s, Status: next } : s)));
@@ -316,15 +335,19 @@ export default function StaffManagement() {
   };
 
   const onFinish = async (values: Omit<Staff, "StaffID">) => {
+    //กันผู้คุมไม่ให้กดบันทึก (เพิ่ม/แก้ไขรายละเอียด)
+    if (isGuard) {
+      toast.warning("สิทธิ์ไม่พอ", "ผู้คุมไม่สามารถเพิ่มหรือแก้ไขรายละเอียดเจ้าหน้าที่ได้");
+      return;
+    }
+
     setLoading((prev) => ({ ...prev, submit: true }));
     try {
       if (selected && isEditing) {
-        // แก้ไข (สถานะใช้ของเดิม)
         const payload = toPayload({ ...values, Status: selected.Status });
         await axios.put(`${API_BASE}/staffs/${selected.StaffID}`, payload);
         toast.success("แก้ไขข้อมูลสำเร็จ");
       } else if (!selected && isEditing) {
-        // เพิ่ม
         const basePayload = toPayload(values);
         const finalPayload = {
           ...basePayload,
@@ -428,21 +451,29 @@ export default function StaffManagement() {
       fixed: "right",
       render: (_, record) => (
         <Space size="small">
-          <Button icon={<EyeOutlined />} type="primary" ghost size="small" onClick={() => openView(record)}>
+          <Button
+            icon={<EyeOutlined />}
+            type="primary"
+            ghost
+            size="small"
+            onClick={() => openView(record)}
+          >
             ดู
           </Button>
-          <Popconfirm
-            title="ยืนยันการลบ"
-            description={`คุณแน่ใจหรือไม่ว่าต้องการลบ ${record.FirstName}?`}
-            onConfirm={() => handleDelete(record.StaffID)}
-            okText="ลบ"
-            cancelText="ยกเลิก"
-            okButtonProps={{ danger: true }}
-          >
-            <Button icon={<DeleteOutlined />} danger size="small">
-              ลบ
-            </Button>
-          </Popconfirm>
+          {!isGuard && ( // ซ่อนลบสำหรับผู้คุม
+            <Popconfirm
+              title="ยืนยันการลบ"
+              description={`คุณแน่ใจหรือไม่ว่าต้องการลบ ${record.FirstName}?`}
+              onConfirm={() => handleDelete(record.StaffID)}
+              okText="ลบ"
+              cancelText="ยกเลิก"
+              okButtonProps={{ danger: true }}
+            >
+              <Button icon={<DeleteOutlined />} danger size="small">
+                ลบ
+              </Button>
+            </Popconfirm>
+          )}
         </Space>
       ),
     },
@@ -502,9 +533,11 @@ export default function StaffManagement() {
           </Space>
         </Col>
         <Col>
-          <Button type="primary" icon={<PlusOutlined />} size="large" onClick={openAdd}>
-            เพิ่มเจ้าหน้าที่
-          </Button>
+          {!isGuard && ( // ซ่อนปุ่มเพิ่มสำหรับผู้คุม
+            <Button type="primary" icon={<PlusOutlined />} size="large" onClick={openAdd}>
+              เพิ่มเจ้าหน้าที่
+            </Button>
+          )}
         </Col>
       </Row>
 
@@ -605,6 +638,7 @@ export default function StaffManagement() {
                 </div>
               </div>
 
+              {/* แสดงสถานะอย่างเดียวในหัวโมดัล */}
               <StatusPillToggle
                 value={selected.Status}
                 onChange={() => {}}
@@ -616,13 +650,13 @@ export default function StaffManagement() {
           <Row gutter={16}>
             <Col xs={24} sm={12}>
               <Form.Item label="ชื่อ" name="FirstName" rules={[{ required: true, message: "กรุณากรอกชื่อ" }]}>
-                <Input placeholder="เช่น สมชาย" disabled={isView} />
+                <Input placeholder="เช่น สมชาย" disabled={isView || isGuard /*  กันผู้คุมแก้ไข */} />
               </Form.Item>
             </Col>
 
             <Col xs={24} sm={12}>
               <Form.Item label="นามสกุล" name="LastName" rules={[{ required: true, message: "กรุณากรอกนามสกุล" }]}>
-                <Input placeholder="เช่น ใจดี" disabled={isView} />
+                <Input placeholder="เช่น ใจดี" disabled={isView || isGuard} />
               </Form.Item>
             </Col>
 
@@ -630,7 +664,7 @@ export default function StaffManagement() {
               <Form.Item label="เพศ" name="Gender_ID" rules={[{ required: true, message: "กรุณาเลือกเพศ" }]}>
                 <Select<number>
                   placeholder="เลือกเพศ"
-                  disabled={isView}
+                  disabled={isView || isGuard}
                   options={genders.map((g) => ({ value: g.Gender_ID, label: g.Gender }))}
                 />
               </Form.Item>
@@ -638,11 +672,12 @@ export default function StaffManagement() {
 
             <Col xs={24} sm={12}>
               <Form.Item label="วันเกิด" name="Birthday" rules={[{ required: true, message: "กรุณาเลือกวันเกิด" }]}>
-                <DatePicker style={{ width: "100%" }} format="DD/MM/YYYY" placeholder="เลือกวันเกิด" disabled={isView} />
+                <DatePicker style={{ width: "100%" }} format="DD/MM/YYYY" placeholder="เลือกวันเกิด" disabled={isView || isGuard} />
               </Form.Item>
             </Col>
 
-            {!selected && isEditing && (
+            {/* แสดงเฉพาะตอนเพิ่มเท่านั้น และกันผู้คุม */}
+            {!selected && !isGuard && (
               <Col xs={24} sm={12}>
                 <Form.Item
                   label="สถานะการทำงาน"
@@ -663,19 +698,19 @@ export default function StaffManagement() {
 
             <Col xs={24}>
               <Form.Item label="อีเมล" name="Email" rules={[{ type: "email", message: "รูปแบบอีเมลไม่ถูกต้อง" }]}>
-                <Input type="email" placeholder="name@example.com" disabled={isView} />
+                <Input type="email" placeholder="name@example.com" disabled={isView || isGuard} />
               </Form.Item>
             </Col>
 
             <Col xs={24}>
               <Form.Item label="ที่อยู่" name="Address">
-                <Input.TextArea rows={3} placeholder="รายละเอียดที่อยู่" disabled={isView} />
+                <Input.TextArea rows={3} placeholder="รายละเอียดที่อยู่" disabled={isView || isGuard} />
               </Form.Item>
             </Col>
           </Row>
 
           <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-            {selected && isView ? (
+            {selected && isView && !isGuard ? ( //  ผู้คุมจะไม่เห็นปุ่มแก้ไข
               <Button onClick={() => setIsEditing(true)} icon={<EditOutlined />}>
                 แก้ไข
               </Button>
@@ -691,9 +726,11 @@ export default function StaffManagement() {
                   <Button onClick={closeModal} style={{ marginRight: 8 }}>
                     ยกเลิก
                   </Button>
-                  <Button type="primary" htmlType="submit" loading={loading.submit}>
-                    {selected ? "บันทึกการแก้ไข" : "เพิ่มข้อมูล"}
-                  </Button>
+                  {!isGuard && ( // ผู้คุมไม่เห็นปุ่มบันทึก
+                    <Button type="primary" htmlType="submit" loading={loading.submit}>
+                      {selected ? "บันทึกการแก้ไข" : "เพิ่มข้อมูล"}
+                    </Button>
+                  )}
                 </>
               )}
             </div>
